@@ -72,16 +72,16 @@ does not stop capture. Multiple monitor bars may instantiate separate readers;
 a pending token can consequently appear on more than one display. Authorization
 must remain one-shot and expire in the backend.
 
-## Super+; hold-to-talk
+## F5 hold-to-talk
 
-**Stock Super+; is unused on this Omarchy install.** Super+V stays Universal
-paste. Super+Ctrl+V stays Clipboard manager. Super+S stays Toggle scratchpad.
-Super+Shift+V is a poor hold-to-talk chord: releasing Shift before V often
-never fires `stop`, so capture continues until the recording limit. First
+**Stock F5 is unused on this Omarchy install.** F9 stays Voxtype dictation.
+Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager. Super+S
+stays Toggle scratchpad. Super+; is left alone. Super+Shift+V is a poor
+hold-to-talk chord: releasing Shift before V often never fires `stop`. First
 inspect `omarchy menu keybindings --print`. Review
 `integrations/hyprland-bindings.lua` and copy its lines into
-`~/.config/hypr/bindings.lua`. It calls `hl.unbind("SUPER + SEMICOLON")` before
-the press/release pair. The installed `o.bind` helper forwards `{ release = true }`
+`~/.config/hypr/bindings.lua`. It calls `hl.unbind("F5")` before the
+press/release pair. The installed `o.bind` helper forwards `{ release = true }`
 to `hl.bind`; the stock F9 voxtype binding uses the same API.
 
 This integration does not change **F9**, **Super+V**, **Super+Ctrl+V**,
@@ -197,7 +197,7 @@ To uninstall:
    `~/.local/bin/omarchy-voice-edit-config`, then run
    `systemctl --user daemon-reload`.
 4. Remove the three opt-in Lua binding lines and reload/check Hyprland. Super+S
-   should already be Toggle scratchpad; Super+; should become unbound.
+   should already be Toggle scratchpad; F5 should become unbound.
 5. Remove the Python tool separately if desired. Keep or explicitly remove the
    voice TOML and model cache; neither should be deleted silently.
 

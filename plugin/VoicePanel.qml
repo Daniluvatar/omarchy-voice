@@ -14,13 +14,14 @@ Panel {
     implicitHeight: button.implicitHeight
 
     readonly property var shortcutOptions: [
+        { value: "F5", label: "F5" },
         { value: "SUPER + SEMICOLON", label: "Super + ;" },
         { value: "SUPER + APOSTROPHE", label: "Super + '" },
         { value: "SUPER + GRAVE", label: "Super + `" },
         { value: "SUPER SHIFT + V", label: "Super + Shift + V (often misses release)" },
         { value: "SUPER + S", label: "Super + S (replaces scratchpad)" }
     ]
-    readonly property string shortcutValue: root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER + SEMICOLON"
+    readonly property string shortcutValue: root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "F5"
     readonly property string shortcutLabel: {
         for (var i = 0; i < shortcutOptions.length; i++)
             if (shortcutOptions[i].value === shortcutValue)
@@ -180,7 +181,7 @@ Panel {
                 }
                 Text {
                     width: parent.width
-                    text: "This dropdown only updates the panel label. Hyprland still needs the matching hold/release binding. Super+Shift+V often stays listening because Shift is released first. Super+; does not have that problem. Super+Ctrl+V remains Clipboard manager."
+                    text: "This dropdown only updates the panel label. Hyprland still needs the matching hold/release binding. Current binding is F5. F9 stays Voxtype. Super+Ctrl+V remains Clipboard manager."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     color: Color.foreground
