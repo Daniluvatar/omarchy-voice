@@ -24,6 +24,15 @@ ACTIONS = frozenset(
     }
 )
 APP = re.compile(r"[a-z0-9][a-z0-9 ._+-]{0,79}\Z")
+APP_ALIASES = {
+    "brave": "brave",
+    "brave browser": "brave",
+    "browser": "brave",
+    "terminal": "terminal",
+    "term": "terminal",
+    "ghostty": "terminal",
+    "spotify": "spotify",
+}
 
 
 @dataclass(frozen=True)
@@ -69,7 +78,8 @@ def parse(text: str) -> Intent:
             return Intent("workspace.switch", {"number": int(value)})
     match = re.fullmatch(r"(?:open|launch|start) (.+)", text)
     if match and APP.fullmatch(match[1]) and ".." not in match[1]:
-        return Intent("app.launch", {"application": match[1]})
+        application = APP_ALIASES.get(match[1], match[1])
+        return Intent("app.launch", {"application": application})
     raise VoiceError("Command not recognized")
 
 
@@ -131,7 +141,7 @@ class DesktopRegistry:
                 except (OSError, UnicodeError, configparser.Error, KeyError):
                     continue
         if len(matches) != 1:
-            raise VoiceError("Application is unavailable or ambiguous")
+            raise VoiceError(f"Application '{name}' is unavailable or ambiguous")
         return matches[0]
 
 

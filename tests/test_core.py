@@ -9,7 +9,11 @@ from omarchy_voice.service import Controller, runtime_dir
     "text,action,params",
     [
         ("Open Brave", "app.launch", {"application": "brave"}),
+        ("open brave browser", "app.launch", {"application": "brave"}),
+        ("open browser", "app.launch", {"application": "brave"}),
         ("launch terminal", "app.launch", {"application": "terminal"}),
+        ("open term", "app.launch", {"application": "terminal"}),
+        ("open ghostty", "app.launch", {"application": "terminal"}),
         ("start Spotify", "app.launch", {"application": "spotify"}),
         ("close window", "window.close", {}),
         ("workspace ten", "workspace.switch", {"number": 10}),

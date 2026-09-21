@@ -13,6 +13,7 @@ import threading
 import time
 from .audio import PipeWireRecorder
 from .core import VoiceError, Router, parse
+from .log import write_log
 from .providers import IsolatedSTT
 
 MAX_REQUEST = 4096
@@ -71,6 +72,7 @@ class Controller:
     def _set(self, state, message):
         self.state = state
         self.message = message
+        write_log("INFO" if state != "error" else "ERROR", "state", state=state, message=message)
 
     def _expire(self):
         if self.pending and time.monotonic() >= self.pending[2]:
@@ -93,6 +95,7 @@ class Controller:
             self.generation += 1
             self.event = threading.Event()
             self.pending = None
+            write_log("INFO", "listen-start")
             # Failure to identify focus disables close, not unrelated commands.
             try:
                 self.window_address = self.router.capture_window()
@@ -153,9 +156,11 @@ class Controller:
         try:
             try:
                 text = worker.transcribe(audio, self.config.language, event)
+                write_log("INFO", "transcribed", text=text)
             finally:
                 recorder.cleanup()
             intent = parse(text)
+            write_log("INFO", "intent", action=intent.action, parameters=intent.parameters)
             with self.lock:
                 if generation != self.generation or event.is_set():
                     return
@@ -163,12 +168,13 @@ class Controller:
         except Exception as exc:
             with self.lock:
                 if generation == self.generation and not event.is_set():
-                    self._set(
-                        "error",
+                    message = (
                         str(exc)
                         if isinstance(exc, VoiceError)
-                        else "Voice processing failed",
+                        else "Voice processing failed"
                     )
+                    write_log("ERROR", "process-failed", error=message)
+                    self._set("error", message)
         finally:
             with self.lock:
                 if generation == self.generation:
@@ -227,11 +233,13 @@ class Controller:
                 raise VoiceError("Voice service is busy")
             try:
                 intent = parse(text)
+                write_log("INFO", "text-command", text=text, action=intent.action)
                 if intent.action == "window.close":
                     self.window_address = self.router.capture_window()
                 self._apply(intent)
-            except VoiceError:
-                self._set("error", "Command failed")
+            except VoiceError as exc:
+                write_log("ERROR", "text-command-failed", text=text, error=str(exc))
+                self._set("error", str(exc))
                 raise
             return self.status()
 

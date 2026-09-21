@@ -13,9 +13,27 @@ Panel {
     implicitWidth: button.implicitWidth
     implicitHeight: button.implicitHeight
 
-    readonly property string shortcutLabel: {
-        var value = root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER SHIFT + V"
-        return value.replace("SUPER", "Super").replace("SHIFT", "Shift")
+    readonly property var shortcutOptions: [
+        "SUPER SHIFT + V",
+        "SUPER + SEMICOLON",
+        "SUPER + APOSTROPHE",
+        "SUPER + GRAVE",
+        "SUPER + S"
+    ]
+    readonly property string shortcutValue: root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER SHIFT + V"
+    readonly property string shortcutLabel: shortcutValue.replace("SUPER", "Super").replace("SHIFT", "Shift")
+
+    function applyShortcut(value) {
+        var entry = { id: root.moduleName }
+        if (root.settings) {
+            for (var key in root.settings)
+                if (key !== "id") entry[key] = root.settings[key]
+        }
+        entry.shortcut = value
+        entry.activation = "Hold to talk"
+        root.settings = entry
+        if (root.bar && root.bar.shell && typeof root.bar.shell.updateEntryInline === "function")
+            root.bar.shell.updateEntryInline(root.moduleName, entry)
     }
 
     VoiceModel {
@@ -82,7 +100,7 @@ Panel {
                 }
                 Text {
                     width: parent.width
-                    text: "Hold " + root.shortcutLabel + " to talk; release to process. Change the shortcut in widget settings, then apply the matching Hyprland binding. Activation is hold-to-talk only. Escape closes this panel, not the pending action."
+                    text: "Hold " + root.shortcutLabel + " to talk; release to process. Activation is hold-to-talk only. Super+Ctrl+V remains Clipboard manager. Escape closes this panel, not the pending action."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     color: Color.foreground
@@ -150,7 +168,23 @@ Panel {
                 }
                 Text {
                     width: parent.width
-                    text: "Settings: model, device, language and action permissions live in config.toml. v0.1 does not provide live settings editing or pretend other providers work. Save the file and restart the voice service."
+                    text: "Shortcut (label only until Hyprland bindings match):"
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: Color.foreground
+                }
+                Repeater {
+                    model: root.shortcutOptions
+                    Button {
+                        required property string modelData
+                        text: modelData.replace("SUPER", "Super").replace("SHIFT", "Shift")
+                        enabled: root.shortcutValue !== modelData
+                        onClicked: root.applyShortcut(modelData)
+                    }
+                }
+                Text {
+                    width: parent.width
+                    text: "Settings: model, device, language and action permissions live in config.toml. Save the file and restart the voice service. Logs: ~/.local/state/omarchy-voice/voice.log"
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     color: Color.foreground

@@ -18,8 +18,8 @@ Hold Super+Shift+V → PipeWire → local Faster-Whisper → deterministic inten
 - Deterministic English parsing, installed `.desktop` app discovery and configurable exact aliases.
 - Strict action/parameter validation, action permissions, expiring single-use nonvoice confirmation for window closing. No arbitrary shell, shutdown or reboot action.
 - Unix-socket daemon with owner-only runtime permissions, bounded requests, duplicate-instance protection, cancellation and killable transcription worker.
-- JSON CLI, dry-run command planning, diagnostics and model download.
-- Native Omarchy bar widget/panel: state, controls, local-processing label, provider metadata, confirmation, and widget settings for a preferred hold-to-talk shortcut. Settings do not rewrite Hyprland by themselves.
+- JSON CLI, dry-run command planning, diagnostics, model download, and `omarchy-voice logs` for the local diagnostic file.
+- Native Omarchy bar widget/panel: state, controls, local-processing label, provider metadata, confirmation, and in-panel shortcut buttons. Settings do not rewrite Hyprland by themselves.
 - Opt-in systemd user service and Lua hold-to-talk bindings; existing F9/Voxtype remains independent.
 
 ### Supported commands
@@ -34,7 +34,7 @@ Hold Super+Shift+V → PipeWire → local Faster-Whisper → deterministic inten
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal** runs the fixed argv `omarchy launch terminal` unless you configure a `terminal` desktop alias. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave browser** map to Brave. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
 
 ## Install backend
 
@@ -96,10 +96,11 @@ omarchy-voice start
 # Speak a supported command.
 omarchy-voice stop
 omarchy-voice status
-omarchy-voice cancel  # Cancel recording/transcription/pending confirmation
+omarchy-voice cancel
+omarchy-voice logs
 ```
 
-`stop` ends capture and begins processing; it does **not** shut down the daemon. Ctrl+C in its terminal shuts down `serve` and cleans up. Only one daemon may run per user runtime directory.
+`stop` ends capture and begins processing; it does **not** shut down the daemon. Ctrl+C in its terminal shuts down `serve` and cleans up. Only one daemon may run per user runtime directory. Diagnostic lines, including the recognized transcript, are appended to `~/.local/state/omarchy-voice/voice.log`. Use `omarchy-voice logs` or `omarchy-voice cancel` to inspect or clear a leftover error.
 
 Explicit text/file execution requires the daemon:
 
@@ -132,7 +133,7 @@ uv build
 
 ### Verification status
 
-- **100 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, and the default-terminal launch path. Wheel/source builds and the documented `uv tool install` command succeeded.
+- **105 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, and local diagnostic logging.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
 - Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.

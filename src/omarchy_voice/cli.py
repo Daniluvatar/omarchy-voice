@@ -11,6 +11,7 @@ import threading
 import wave
 from .config import load_config
 from .core import VoiceError, Router, parse
+from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
 from .service import Controller, Server, request, runtime_dir
 
@@ -28,6 +29,7 @@ def parser():
         "providers",
         "doctor",
         "download-model",
+        "logs",
     ):
         sub.add_parser(command)
     confirm = sub.add_parser("confirm")
@@ -140,6 +142,20 @@ def main(argv=None):
         elif command == "download-model":
             location = download_model(config)
             result = {"state": "idle", "message": "Model downloaded", "path": location}
+        elif command == "logs":
+            path = log_path()
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()[-80:]
+            except FileNotFoundError:
+                lines = []
+            except OSError as exc:
+                raise VoiceError("Cannot read voice log") from exc
+            result = {
+                "state": "idle",
+                "message": "Recent local voice log lines",
+                "path": str(path),
+                "lines": lines,
+            }
         print(json.dumps(result))
         return 1 if result.get("state") == "error" else 0
     except VoiceError as exc:
