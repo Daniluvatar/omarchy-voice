@@ -51,7 +51,7 @@ def test_close_keeps_original_focus(tmp_path, voice):
         active = "0x999aaa"  # confirmation popup acquired focus
         assert c.confirm(token)["state"] == "executing"
         wait(c)
-        assert calls == [["hyprctl", "dispatch", "closewindow", "address:0x123abc"]]
+        assert calls == [["hyprctl", "dispatch", 'hl.dsp.window.close({window=hl.get_window("address:0x123abc")})']]
     finally:
         c.close()
 
@@ -154,3 +154,63 @@ def test_async_action_failure_visible_and_recoverable(tmp_path):
     assert c.status() == {"state": "error", "message": "Desktop action failed"}
     assert c.cancel()["state"] == "idle"
     c.close()
+
+
+def _layout_runner(address, monitor_id, calls):
+    clients = [{"address": address, "monitor": monitor_id}]
+    monitors = [
+        {"id": 0, "name": "HDMI-A-1", "x": 0},
+        {"id": 1, "name": "DP-1", "x": 1536},
+    ]
+
+    def runner(argv, **kwargs):
+        if argv == ["hyprctl", "-j", "activewindow"]:
+            return SimpleNamespace(stdout=json.dumps({"address": address}))
+        if argv == ["hyprctl", "-j", "clients"]:
+            return SimpleNamespace(stdout=json.dumps(clients))
+        if argv == ["hyprctl", "-j", "monitors"]:
+            return SimpleNamespace(stdout=json.dumps(monitors))
+        calls.append(argv)
+        return SimpleNamespace(stdout="")
+
+    return runner
+
+
+def test_move_keeps_original_focus(tmp_path):
+    c, _ = controller(tmp_path, "move window left")
+    calls = []
+    c.router.runner = _layout_runner("0x123abc", 1, calls)
+    try:
+        c.start()
+        c.router.runner = _layout_runner("0x123abc", 1, calls)
+        c.stop()
+        wait(c)
+        assert calls == [[
+            "hyprctl",
+            "dispatch",
+            'hl.dsp.window.move({monitor="HDMI-A-1", window=hl.get_window("address:0x123abc")})',
+        ]]
+    finally:
+        c.close()
+
+
+def test_move_other_screen_from_left(tmp_path):
+    router = Router(Config(), runner=_layout_runner("0x123abc", 0, []))
+    assert router.plan(
+        parse("move window to other screen"), window_address="0x123abc"
+    ) == [
+        "hyprctl",
+        "dispatch",
+        'hl.dsp.window.move({monitor="DP-1", window=hl.get_window("address:0x123abc")})',
+    ]
+
+
+def test_move_already_on_left_fails():
+    router = Router(Config(), runner=_layout_runner("0x123abc", 0, []))
+    with pytest.raises(VoiceError, match="already on that screen"):
+        router.plan(parse("move window left"), window_address="0x123abc")
+
+
+def test_move_rejects_numbered_windows():
+    with pytest.raises(VoiceError):
+        parse("move window one left")

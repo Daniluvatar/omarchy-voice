@@ -96,7 +96,7 @@ class Controller:
             self.event = threading.Event()
             self.pending = None
             write_log("INFO", "listen-start")
-            # Failure to identify focus disables close, not unrelated commands.
+            # Failure to identify focus disables close/move, not unrelated commands.
             try:
                 self.window_address = self.router.capture_window()
             except VoiceError:
@@ -193,6 +193,10 @@ class Controller:
             )
             self._set("confirmation", "Confirm closing the original window")
             return
+        if intent.action == "window.move_monitor":
+            address = self.router.validate_window(self.window_address)
+            self._queue_action(intent, window_address=address)
+            return
         self._queue_action(intent)
 
     def _queue_action(self, intent, *, confirmed=False, window_address=None):
@@ -234,7 +238,7 @@ class Controller:
             try:
                 intent = parse(text)
                 write_log("INFO", "text-command", text=text, action=intent.action)
-                if intent.action == "window.close":
+                if intent.action in ("window.close", "window.move_monitor"):
                     self.window_address = self.router.capture_window()
                 self._apply(intent)
             except VoiceError as exc:

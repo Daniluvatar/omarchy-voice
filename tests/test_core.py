@@ -27,6 +27,12 @@ from omarchy_voice.service import Controller, runtime_dir
         ("volume down", "audio.volume", {"direction": "down"}),
         ("mute", "audio.mute", {}),
         ("lock computer", "system.lock", {}),
+        ("move window left", "window.move_monitor", {"direction": "left"}),
+        ("move this left", "window.move_monitor", {"direction": "left"}),
+        ("move window right", "window.move_monitor", {"direction": "right"}),
+        ("move this right", "window.move_monitor", {"direction": "right"}),
+        ("move window to other screen", "window.move_monitor", {"direction": "other"}),
+        ("move this to other screen", "window.move_monitor", {"direction": "other"}),
     ],
 )
 def test_parse(text, action, params):
@@ -46,6 +52,9 @@ def test_parse(text, action, params):
         "mute then lock computer",
         "close spotify",
         "open ../../bin/sh",
+        "move window one left",
+        "move window 1 to left screen",
+        "move brave left",
     ],
 )
 def test_reject(text):

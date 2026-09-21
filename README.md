@@ -29,12 +29,15 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 | Open Brave / Open terminal / Open Spotify | Launch an installed application (terminal uses Omarchy’s default terminal) |
 | Open / launch / start `<application>` | Exact installed name or configured alias |
 | Close window | Request explicit confirmation |
+| Move window left / Move this left | Move the focused window to the leftmost monitor |
+| Move window right / Move this right | Move the focused window to the rightmost monitor |
+| Move window to other screen | Move the focused window to the other monitor |
 | Workspace one / two / … / ten | Switch workspace 1–10 |
 | Volume up / Volume down | Adjust output volume |
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves use the window focused when you press F5, not numbered labels. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
 
 ## Install backend
 
@@ -68,7 +71,7 @@ Review [examples/config.toml](examples/config.toml) before enabling the daemon. 
 allow = []
 ```
 
-Allowed action IDs: `app.launch`, `window.close`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration changes require restarting the daemon. `--config PATH` is a global option **before** the subcommand.
+Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration changes require restarting the daemon. `--config PATH` is a global option **before** the subcommand.
 
 ## Run without installing the desktop integration
 
@@ -133,11 +136,11 @@ uv build
 
 ### Verification status
 
-- **105 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, and local diagnostic logging.
+- **123 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor moves.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
 - Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
-- Real CLI dry-run for “workspace two” produced `hyprctl dispatch workspace 2` without running it; all doctor dependency checks passed in the development environment.
+- Real CLI dry-run for “workspace two” produced `hyprctl dispatch hl.dsp.focus({workspace="2"})` without running it; all doctor dependency checks passed in the development environment.
 - **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical F5 release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
 
 ## Missing / intentionally deferred

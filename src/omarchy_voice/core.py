@@ -17,12 +17,15 @@ ACTIONS = frozenset(
     {
         "app.launch",
         "window.close",
+        "window.move_monitor",
         "workspace.switch",
         "audio.volume",
         "audio.mute",
         "system.lock",
     }
 )
+WINDOW_ADDRESS = re.compile(r"0x[0-9a-fA-F]{1,16}\Z")
+MONITOR_DIRECTIONS = ("left", "right", "other")
 APP = re.compile(r"[a-z0-9][a-z0-9 ._+-]{0,79}\Z")
 APP_ALIASES = {
     "brave": "brave",
@@ -66,6 +69,12 @@ def parse(text: str) -> Intent:
         "lock computer": ("system.lock", {}),
         "volume up": ("audio.volume", {"direction": "up"}),
         "volume down": ("audio.volume", {"direction": "down"}),
+        "move window left": ("window.move_monitor", {"direction": "left"}),
+        "move this left": ("window.move_monitor", {"direction": "left"}),
+        "move window right": ("window.move_monitor", {"direction": "right"}),
+        "move this right": ("window.move_monitor", {"direction": "right"}),
+        "move window to other screen": ("window.move_monitor", {"direction": "other"}),
+        "move this to other screen": ("window.move_monitor", {"direction": "other"}),
     }
     if text in fixed:
         return Intent(*fixed[text])
@@ -164,11 +173,18 @@ class Router:
 
     @staticmethod
     def validate_window(address):
-        if (type(address) is not str
-                or re.fullmatch(r"0x[0-9a-fA-F]{1,16}", address) is None
-                or int(address, 16) == 0):
-            raise VoiceError("No valid original window to close")
+        if (
+            type(address) is not str
+            or WINDOW_ADDRESS.fullmatch(address) is None
+            or int(address, 16) == 0
+        ):
+            raise VoiceError("No valid original window")
         return address
+
+    @staticmethod
+    def lua_window_ref(address):
+        Router.validate_window(address)
+        return 'hl.get_window("address:' + address + '")'
 
     def capture_window(self):
         """Snapshot focus before capture/confirmation UI can change it."""
@@ -194,6 +210,7 @@ class Router:
             "app.launch": {"application"},
             "workspace.switch": {"number"},
             "audio.volume": {"direction"},
+            "window.move_monitor": {"direction"},
         }.get(a, set())
         if set(p) != keys:
             raise VoiceError("Invalid action parameters")
@@ -209,7 +226,11 @@ class Router:
         if a == "workspace.switch":
             if type(p["number"]) is not int or not 1 <= p["number"] <= 10:
                 raise VoiceError("Invalid workspace")
-            return ["hyprctl", "dispatch", "workspace", str(p["number"])]
+            return [
+                "hyprctl",
+                "dispatch",
+                'hl.dsp.focus({workspace="' + str(p["number"]) + '"})',
+            ]
         if a == "audio.volume":
             if type(p["direction"]) is not str or p["direction"] not in ("up", "down"):
                 raise VoiceError("Invalid volume direction")
@@ -223,19 +244,113 @@ class Router:
             ]
         if a == "window.close":
             # An unbound plan is preview-only, never executable.
-            target = (self.validate_window(window_address)
-                      if window_address is not None else "<original-window>")
-            return ["hyprctl", "dispatch", "closewindow", "address:" + target]
+            if window_address is None:
+                return [
+                    "hyprctl",
+                    "dispatch",
+                    'hl.dsp.window.close({window=hl.get_window("address:<original-window>")})',
+                ]
+            return [
+                "hyprctl",
+                "dispatch",
+                "hl.dsp.window.close({window="
+                + self.lua_window_ref(window_address)
+                + "})",
+            ]
+        if a == "window.move_monitor":
+            if type(p["direction"]) is not str or p["direction"] not in MONITOR_DIRECTIONS:
+                raise VoiceError("Invalid monitor direction")
+            if window_address is None:
+                return [
+                    "hyprctl",
+                    "dispatch",
+                    'hl.dsp.window.move({monitor="<monitor>", window=hl.get_window("address:<original-window>")})',
+                ]
+            return self._move_monitor_argv(p["direction"], window_address)
         return {
             "audio.mute": ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"],
             "system.lock": ["omarchy", "system", "lock"],
         }[a]
+
+    def _move_monitor_argv(self, direction, window_address):
+        address = self.validate_window(window_address)
+        clients = self._hypr_json("clients")
+        monitors = self._hypr_json("monitors")
+        if type(clients) is not list or type(monitors) is not list:
+            raise VoiceError("Cannot read window layout")
+        current = None
+        for client in clients:
+            if type(client) is dict and client.get("address") == address:
+                current = client
+                break
+        if current is None or type(current.get("monitor")) is not int:
+            raise VoiceError("Original window is gone")
+        layout = []
+        seen = set()
+        for monitor in monitors:
+            if type(monitor) is not dict:
+                continue
+            ident = monitor.get("id")
+            name = monitor.get("name")
+            xpos = monitor.get("x")
+            if type(ident) is not int or type(name) is not str:
+                continue
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,63}", name):
+                continue
+            if not isinstance(xpos, (int, float)) or isinstance(xpos, bool) or ident in seen:
+                continue
+            xpos_value = float(xpos)
+            seen.add(ident)
+            layout.append((xpos_value, ident, name))
+        layout.sort()
+        names = [item[2] for item in layout]
+        current_name = None
+        for _x, ident, name in layout:
+            if ident == current["monitor"]:
+                current_name = name
+                break
+        if current_name is None or not names:
+            raise VoiceError("Cannot identify original monitor")
+        if direction == "left":
+            target = names[0]
+        elif direction == "right":
+            target = names[-1]
+        else:
+            if len(names) != 2:
+                raise VoiceError("Need exactly two monitors for other screen")
+            target = names[0] if current_name == names[1] else names[1]
+        if target == current_name:
+            raise VoiceError("Window is already on that screen")
+        return [
+            "hyprctl",
+            "dispatch",
+            "hl.dsp.window.move({monitor=\""
+            + target
+            + "\", window="
+            + self.lua_window_ref(address)
+            + "})",
+        ]
+
+    def _hypr_json(self, command):
+        try:
+            result = self.runner(
+                ["hyprctl", "-j", command],
+                check=True,
+                timeout=2,
+                capture_output=True,
+                text=True,
+            )
+            return json.loads(result.stdout)
+        except (OSError, subprocess.SubprocessError, ValueError, TypeError, json.JSONDecodeError) as exc:
+            raise VoiceError("Cannot read window layout") from exc
 
     def execute(self, intent, *, confirmed=False, window_address=None):
         argv = self.plan(intent, window_address=window_address)
         if intent.action == "window.close":
             if confirmed is not True:
                 raise VoiceError("Explicit confirmation required")
+            self.validate_window(window_address)
+        if intent.action == "window.move_monitor":
             self.validate_window(window_address)
         try:
             self.runner(
