@@ -1,0 +1,12 @@
+#!/usr/bin/env python3
+"""Explicit UI action: open the user's TOML in a fixed terminal/editor argv."""
+import os
+from pathlib import Path
+
+config_home = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config")))
+if not config_home.is_absolute():
+    raise SystemExit("XDG_CONFIG_HOME must be absolute")
+path = config_home / "omarchy-voice" / "config.toml"
+path.parent.mkdir(parents=True, exist_ok=True)
+# An empty/new file means backend defaults. No automatic config replacement.
+os.execvp("alacritty", ["alacritty", "-e", "nvim", str(path)])

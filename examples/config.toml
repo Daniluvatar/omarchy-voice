@@ -1,0 +1,27 @@
+# Copy to ~/.config/omarchy-voice/config.toml. Unknown keys fail closed.
+# Install the stt extra, then explicitly run omarchy-voice download-model.
+[stt]
+provider = "faster-whisper"
+model = "tiny.en"
+device = "cpu"
+compute_type = "int8"
+language = "en"
+timeout_seconds = 60
+
+[audio]
+max_seconds = 15
+
+[confirmation]
+timeout_seconds = 15
+
+[notifications]
+enabled = false
+
+[permissions]
+allow = ["app.launch", "window.close", "workspace.switch", "audio.volume", "audio.mute", "system.lock"]
+
+# Exact installed desktop IDs; change these to match your installation.
+[applications.aliases]
+brave = "brave-browser.desktop"
+terminal = "Alacritty.desktop"
+spotify = "spotify.desktop"

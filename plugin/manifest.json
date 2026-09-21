@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "id": "local.omarchy-voice",
+  "name": "Omarchy Voice",
+  "version": "0.1.0",
+  "description": "Local push-to-talk status, provider information and explicit action confirmation.",
+  "author": "Omarchy Voice contributors",
+  "license": "MIT",
+  "kinds": ["bar-widget"],
+  "entryPoints": {"barWidget": "VoicePanel.qml"},
+  "barWidget": {
+    "displayName": "Voice",
+    "description": "Local voice control (requires the separately started omarchy-voice service).",
+    "category": "Utilities",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {},
+    "schema": []
+  }
+}
