@@ -29,10 +29,16 @@ from omarchy_voice.service import Controller, runtime_dir
         ("lock computer", "system.lock", {}),
         ("move window left", "window.move_monitor", {"direction": "left"}),
         ("move this left", "window.move_monitor", {"direction": "left"}),
+        ("move this window to the left", "window.move_monitor", {"direction": "left"}),
+        ("move this window to the left screen", "window.move_monitor", {"direction": "left"}),
+        ("move the window to the left", "window.move_monitor", {"direction": "left"}),
+        ("move it to the left", "window.move_monitor", {"direction": "left"}),
         ("move window right", "window.move_monitor", {"direction": "right"}),
         ("move this right", "window.move_monitor", {"direction": "right"}),
+        ("move this window to the right", "window.move_monitor", {"direction": "right"}),
         ("move window to other screen", "window.move_monitor", {"direction": "other"}),
         ("move this to other screen", "window.move_monitor", {"direction": "other"}),
+        ("move this window to the other monitor", "window.move_monitor", {"direction": "other"}),
     ],
 )
 def test_parse(text, action, params):

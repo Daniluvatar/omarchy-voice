@@ -26,6 +26,11 @@ ACTIONS = frozenset(
 )
 WINDOW_ADDRESS = re.compile(r"0x[0-9a-fA-F]{1,16}\Z")
 MONITOR_DIRECTIONS = ("left", "right", "other")
+MOVE_MONITOR = re.compile(
+    r"\Amove(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)"
+    r"(?:\s+to(?:\s+the)?)?\s+(left|right|other)"
+    r"(?:\s+(?:screen|monitor|display))?\Z"
+)
 APP = re.compile(r"[a-z0-9][a-z0-9 ._+-]{0,79}\Z")
 APP_ALIASES = {
     "brave": "brave",
@@ -69,15 +74,12 @@ def parse(text: str) -> Intent:
         "lock computer": ("system.lock", {}),
         "volume up": ("audio.volume", {"direction": "up"}),
         "volume down": ("audio.volume", {"direction": "down"}),
-        "move window left": ("window.move_monitor", {"direction": "left"}),
-        "move this left": ("window.move_monitor", {"direction": "left"}),
-        "move window right": ("window.move_monitor", {"direction": "right"}),
-        "move this right": ("window.move_monitor", {"direction": "right"}),
-        "move window to other screen": ("window.move_monitor", {"direction": "other"}),
-        "move this to other screen": ("window.move_monitor", {"direction": "other"}),
     }
     if text in fixed:
         return Intent(*fixed[text])
+    move = MOVE_MONITOR.fullmatch(text)
+    if move:
+        return Intent("window.move_monitor", {"direction": move[1]})
     words = [
         "one",
         "two",

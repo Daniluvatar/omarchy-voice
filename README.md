@@ -29,15 +29,14 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 | Open Brave / Open terminal / Open Spotify | Launch an installed application (terminal uses Omarchy’s default terminal) |
 | Open / launch / start `<application>` | Exact installed name or configured alias |
 | Close window | Request explicit confirmation |
-| Move window left / Move this left | Move the focused window to the leftmost monitor |
-| Move window right / Move this right | Move the focused window to the rightmost monitor |
-| Move window to other screen | Move the focused window to the other monitor |
+| Move this / this window / the window left or right | Move the focused window to that monitor |
+| Move this window to the other screen | Move the focused window to the other monitor |
 | Workspace one / two / … / ten | Switch workspace 1–10 |
 | Volume up / Volume down | Adjust output volume |
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves use the window focused when you press F5, not numbered labels. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`) and still use the window focused when you press F5. Numbered labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
 
 ## Install backend
 
@@ -136,7 +135,7 @@ uv build
 
 ### Verification status
 
-- **123 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor moves.
+- **129 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor moves.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
 - Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
