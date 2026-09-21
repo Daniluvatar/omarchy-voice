@@ -13,6 +13,11 @@ Panel {
     implicitWidth: button.implicitWidth
     implicitHeight: button.implicitHeight
 
+    readonly property string shortcutLabel: {
+        var value = root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER + S"
+        return value.replace("SUPER", "Super").replace("SHIFT", "Shift")
+    }
+
     VoiceModel {
         id: voice
         onConfirmationRequested: root.open()
@@ -77,7 +82,7 @@ Panel {
                 }
                 Text {
                     width: parent.width
-                    text: "Hold Super+S to talk; release to process. Requires the opt-in keybinding (replaces scratchpad toggle). Escape closes this panel, not the pending action."
+                    text: "Hold " + root.shortcutLabel + " to talk; release to process. Change the shortcut in widget settings, then apply the matching Hyprland binding. Activation is hold-to-talk only. Escape closes this panel, not the pending action."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     color: Color.foreground

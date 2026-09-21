@@ -99,7 +99,12 @@ adapting and checking that version's API.
 ## UI, privacy, and settings
 
 The bar shows the actual backend state. Click it for status, controls, provider
-capabilities and settings. A new confirmation token opens the native panel with
+capabilities and settings. Widget settings expose a preferred hold-to-talk
+shortcut and document that activation is hold-to-talk only. Changing the
+shortcut label does **not** rewrite Hyprland; copy the matching lines from
+`integrations/hyprland-bindings.lua` after editing the key. Toggle, wake-word,
+and always-listening modes are not implemented. A new confirmation token opens
+the native panel with
 an explicit **Deny / cancel** and **Confirm action** surface. There is no
 voice-only confirmation or automatic approval. Escape/outside-click merely
 closes the panel; the pending operation remains subject to backend expiry.

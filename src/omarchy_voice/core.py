@@ -180,8 +180,8 @@ class Router:
             value = p["application"]
             if type(value) is not str or not APP.fullmatch(value) or ".." in value:
                 raise VoiceError("Invalid application")
-            # Spoken "terminal" uses Omarchy's default terminal unless the
-            # user configured an exact desktop alias. argv is fixed.
+            # Spoken "terminal" uses Omarchy's default terminal. A configured
+            # terminal alias still launches that desktop file instead.
             if value == "terminal" and "terminal" not in self.config.aliases:
                 return ["omarchy", "launch", "terminal"]
             return ["gio", "launch", str(self.registry.resolve(value))]

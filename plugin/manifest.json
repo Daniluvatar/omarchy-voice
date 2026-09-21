@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "local.omarchy-voice",
   "name": "Omarchy Voice",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local push-to-talk status, provider information and explicit action confirmation.",
   "author": "Omarchy Voice contributors",
   "license": "MIT",
@@ -14,7 +14,33 @@
     "category": "Utilities",
     "allowMultiple": false,
     "defaultSection": "right",
-    "defaults": {},
-    "schema": []
+    "defaults": {
+      "shortcut": "SUPER + S",
+      "activation": "Hold to talk"
+    },
+    "schema": [
+      {
+        "key": "shortcut",
+        "type": "enum",
+        "label": "Voice shortcut",
+        "options": [
+          "SUPER + S",
+          "SUPER + SEMICOLON",
+          "SUPER + APOSTROPHE",
+          "SUPER + GRAVE",
+          "SUPER SHIFT + V"
+        ],
+        "defaultValue": "SUPER + S",
+        "description": "Hold-to-talk key. Changing this only updates the panel label until the matching Hyprland binding is applied."
+      },
+      {
+        "key": "activation",
+        "type": "enum",
+        "label": "Activation",
+        "options": ["Hold to talk"],
+        "defaultValue": "Hold to talk",
+        "description": "v0.1 only supports hold-to-talk. Toggle, wake word, and always-listening are not implemented."
+      }
+    ]
   }
 }

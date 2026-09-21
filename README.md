@@ -19,7 +19,7 @@ Hold Super+S → PipeWire → local Faster-Whisper → deterministic intent
 - Strict action/parameter validation, action permissions, expiring single-use nonvoice confirmation for window closing. No arbitrary shell, shutdown or reboot action.
 - Unix-socket daemon with owner-only runtime permissions, bounded requests, duplicate-instance protection, cancellation and killable transcription worker.
 - JSON CLI, dry-run command planning, diagnostics and model download.
-- Native Omarchy bar widget/panel: state, controls, local-processing label, provider metadata and confirmation; settings open a TOML editor rather than pretending there is a live settings API.
+- Native Omarchy bar widget/panel: state, controls, local-processing label, provider metadata, confirmation, and widget settings for a preferred hold-to-talk shortcut. Settings do not rewrite Hyprland by themselves.
 - Opt-in systemd user service and Lua hold-to-talk bindings; existing F9/Voxtype remains independent.
 
 ### Supported commands
@@ -114,7 +114,7 @@ Execution uses the daemon's configuration. The default for `run` and `transcribe
 
 The widget lives in `plugin/` (not the repository root). Copy that folder, enable it, and put it on the bar. Do not use `omarchy plugin add` on this repository URL.
 
-**Super+S is currently Toggle scratchpad.** Applying the supplied hold-to-talk snippet replaces that shortcut. Super+V (Universal paste) and F9/Voxtype stay untouched.
+**Super+S currently replaces Toggle scratchpad** on this machine. Super+V (Universal paste) is left alone. The widget settings can display a different preferred shortcut; applying it still requires editing `~/.config/hypr/bindings.lua`. Activation is hold-to-talk only.
 
 On this machine the backend, service, bar widget, and Super+S binding are installed from this checkout. Other machines should follow [docs/integration.md](docs/integration.md).
 
@@ -134,6 +134,7 @@ uv build
 
 - **100 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, and the default-terminal launch path. Wheel/source builds and the documented `uv tool install` command succeeded.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
+- Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
 - Real CLI dry-run for “workspace two” produced `hyprctl dispatch workspace 2` without running it; all doctor dependency checks passed in the development environment.
 - **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical Super+S release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
