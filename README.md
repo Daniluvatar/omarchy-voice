@@ -3,7 +3,7 @@
 Local-first voice commands for Omarchy. **v0.1 architectural MVP, not a finished public product.** Python handles audio, speech recognition and permission-checked actions; a native Omarchy Shell widget presents status and confirmation.
 
 ```text
-Hold Super+Shift+V → PipeWire → local Faster-Whisper → deterministic intent
+Hold Super+; → PipeWire → local Faster-Whisper → deterministic intent
                                                     ↓
                                 permission check → registered desktop action
                                                     ↑
@@ -115,9 +115,9 @@ Execution uses the daemon's configuration. The default for `run` and `transcribe
 
 The widget lives in `plugin/` (not the repository root). Copy that folder, enable it, and put it on the bar. Do not use `omarchy plugin add` on this repository URL.
 
-**Super+Shift+V** is the hold-to-talk binding on this machine. Super+S is Toggle scratchpad again. Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager and was **not** used for voice. The widget settings can display a different preferred shortcut; applying it still requires editing `~/.config/hypr/bindings.lua`. Activation is hold-to-talk only.
+**Super+;** is the hold-to-talk binding on this machine. Super+S is Toggle scratchpad. Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager. Super+Shift+V is not used because releasing Shift first often never fires `stop`, so listening continues until the 15s limit. The widget dropdown can display a different preferred shortcut; applying it still requires editing `~/.config/hypr/bindings.lua`. Activation is hold-to-talk only.
 
-On this machine the backend, service, bar widget, and Super+Shift+V binding are installed from this checkout. Other machines should follow [docs/integration.md](docs/integration.md).
+On this machine the backend, service, bar widget, and Super+; binding are installed from this checkout. Other machines should follow [docs/integration.md](docs/integration.md).
 
 ## Development and validation
 
@@ -138,11 +138,11 @@ uv build
 - Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
 - Real CLI dry-run for “workspace two” produced `hyprctl dispatch workspace 2` without running it; all doctor dependency checks passed in the development environment.
-- **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical Super+Shift+V release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
+- **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical Super+; release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
 
 ## Missing / intentionally deferred
 
-- Full live microphone/shortcut acceptance. The bar widget and Super+Shift+V binding are installed on this machine; popup/focus and hold-to-talk still need a live check.
+- Full live microphone/shortcut acceptance. The bar widget and Super+; binding are installed on this machine; popup/focus and hold-to-talk still need a live check.
 - In-panel editable provider/permission/microphone configuration, model-download UI and graphical onboarding.
 - Additional production STT providers, streaming and persistent/shared model service (models currently run in isolated workers).
 - Internationalized command grammars, wake word, always-listening, cloud STT, LLM/Hermes integration, arbitrary shell, power actions and provider marketplace.

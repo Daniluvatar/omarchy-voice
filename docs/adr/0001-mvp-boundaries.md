@@ -14,7 +14,7 @@ Status: accepted for v0.1 implementation.
 - Keep existing Voxtype/F9 dictation untouched. `voxtype transcribe --help` confirms an audio-file transcription command exists on the inspected installation; output semantics and shared model lifecycle remain unvalidated and are not v0.1 dependencies.
 - Native Omarchy plugin compatibility is checked against the installed shell. Never edit the packaged source to integrate this project.
 - Spoken "open terminal" uses the fixed argv `omarchy launch terminal` unless a `terminal` desktop alias is configured. This avoids a hard-coded Alacritty desktop ID that is not present on stock Omarchy.
-- v0.1 activation is hold-to-talk only. The widget can display a preferred shortcut, but Hyprland still owns the actual binding. Super+V (paste), Super+Ctrl+V (clipboard manager), and Super+S (scratchpad) stay occupied; the current default is unused Super+Shift+V.
+- v0.1 activation is hold-to-talk only. The widget can display a preferred shortcut, but Hyprland still owns the actual binding. Super+V (paste), Super+Ctrl+V (clipboard manager), and Super+S (scratchpad) stay occupied. Super+Shift+V is a poor hold chord because releasing Shift first often never fires stop; the current default is unused Super+;.
 
 ## Consequences
 

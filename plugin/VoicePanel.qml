@@ -14,14 +14,19 @@ Panel {
     implicitHeight: button.implicitHeight
 
     readonly property var shortcutOptions: [
-        "SUPER SHIFT + V",
-        "SUPER + SEMICOLON",
-        "SUPER + APOSTROPHE",
-        "SUPER + GRAVE",
-        "SUPER + S"
+        { value: "SUPER + SEMICOLON", label: "Super + ;" },
+        { value: "SUPER + APOSTROPHE", label: "Super + '" },
+        { value: "SUPER + GRAVE", label: "Super + `" },
+        { value: "SUPER SHIFT + V", label: "Super + Shift + V (often misses release)" },
+        { value: "SUPER + S", label: "Super + S (replaces scratchpad)" }
     ]
-    readonly property string shortcutValue: root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER SHIFT + V"
-    readonly property string shortcutLabel: shortcutValue.replace("SUPER", "Super").replace("SHIFT", "Shift")
+    readonly property string shortcutValue: root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER + SEMICOLON"
+    readonly property string shortcutLabel: {
+        for (var i = 0; i < shortcutOptions.length; i++)
+            if (shortcutOptions[i].value === shortcutValue)
+                return shortcutOptions[i].label
+        return shortcutValue.replace("SUPER", "Super").replace("SHIFT", "Shift")
+    }
 
     function applyShortcut(value) {
         var entry = { id: root.moduleName }
@@ -166,21 +171,19 @@ Panel {
                     wrapMode: Text.WrapAnywhere
                     color: Color.foreground
                 }
+                Dropdown {
+                    width: parent.width
+                    label: "Voice shortcut"
+                    value: root.shortcutValue
+                    options: root.shortcutOptions
+                    onChanged: function(value) { root.applyShortcut(value) }
+                }
                 Text {
                     width: parent.width
-                    text: "Shortcut (label only until Hyprland bindings match):"
+                    text: "This dropdown only updates the panel label. Hyprland still needs the matching hold/release binding. Super+Shift+V often stays listening because Shift is released first. Super+; does not have that problem. Super+Ctrl+V remains Clipboard manager."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     color: Color.foreground
-                }
-                Repeater {
-                    model: root.shortcutOptions
-                    Button {
-                        required property string modelData
-                        text: modelData.replace("SUPER", "Super").replace("SHIFT", "Shift")
-                        enabled: root.shortcutValue !== modelData
-                        onClicked: root.applyShortcut(modelData)
-                    }
                 }
                 Text {
                     width: parent.width

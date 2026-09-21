@@ -49,6 +49,11 @@ def parse(text: str) -> Intent:
     # punctuation inside commands or compound instructions.
     if text.endswith((".", "?", "!")):
         text = text[:-1].rstrip()
+    # A missed PTT release records the same command twice.
+    if ". " in text:
+        first, rest = text.split(". ", 1)
+        if first == rest.rstrip(".?!"):
+            text = first
     fixed = {
         "close window": ("window.close", {}),
         "mute": ("audio.mute", {}),

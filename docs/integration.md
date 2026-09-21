@@ -72,22 +72,22 @@ does not stop capture. Multiple monitor bars may instantiate separate readers;
 a pending token can consequently appear on more than one display. Authorization
 must remain one-shot and expire in the backend.
 
-## Super+Shift+V hold-to-talk
+## Super+; hold-to-talk
 
-**Stock Super+Shift+V is unused on this Omarchy install.** Super+V stays
-Universal paste. Super+Ctrl+V stays Clipboard manager. Super+S stays Toggle
-scratchpad. First inspect `omarchy menu keybindings --print`. Review
+**Stock Super+; is unused on this Omarchy install.** Super+V stays Universal
+paste. Super+Ctrl+V stays Clipboard manager. Super+S stays Toggle scratchpad.
+Super+Shift+V is a poor hold-to-talk chord: releasing Shift before V often
+never fires `stop`, so capture continues until the recording limit. First
+inspect `omarchy menu keybindings --print`. Review
 `integrations/hyprland-bindings.lua` and copy its lines into
-`~/.config/hypr/bindings.lua`. It calls `hl.unbind("SUPER + SHIFT + V")` before
+`~/.config/hypr/bindings.lua`. It calls `hl.unbind("SUPER + SEMICOLON")` before
 the press/release pair. The installed `o.bind` helper forwards `{ release = true }`
 to `hl.bind`; the stock F9 voxtype binding uses the same API.
 
 This integration does not change **F9**, **Super+V**, **Super+Ctrl+V**,
 **Super+S**, **Super+Ctrl+X**, or voxtype. Do not hold both dictation shortcuts
-concurrently. Release V before Super/Shift; modifier release ordering and
-compositor input routing need live testing. If release is missed, the backend
-capture limit bounds recording; use Cancel. After making your own binding edit,
-run:
+concurrently. If release is missed, the backend capture limit bounds recording;
+use Cancel. After making your own binding edit, run:
 
 ```sh
 hyprctl reload
@@ -197,7 +197,7 @@ To uninstall:
    `~/.local/bin/omarchy-voice-edit-config`, then run
    `systemctl --user daemon-reload`.
 4. Remove the three opt-in Lua binding lines and reload/check Hyprland. Super+S
-   should already be Toggle scratchpad; Super+Shift+V should become unbound.
+   should already be Toggle scratchpad; Super+; should become unbound.
 5. Remove the Python tool separately if desired. Keep or explicitly remove the
    voice TOML and model cache; neither should be deleted silently.
 
