@@ -72,21 +72,22 @@ does not stop capture. Multiple monitor bars may instantiate separate readers;
 a pending token can consequently appear on more than one display. Authorization
 must remain one-shot and expire in the backend.
 
-## Super+S hold-to-talk: explicit shortcut replacement
+## Super+Shift+V hold-to-talk
 
-**Stock Super+S is Toggle scratchpad. This choice replaces it.** Super+V
-(Universal paste) is left alone. First inspect `omarchy menu keybindings --print`.
-Review `integrations/hyprland-bindings.lua` and copy its lines into
-`~/.config/hypr/bindings.lua` only if you accept that conflict. It calls
-`hl.unbind("SUPER + S")` before the press/release pair. The installed `o.bind`
-helper forwards `{ release = true }` to `hl.bind`; the stock F9 voxtype binding
-uses the same API.
+**Stock Super+Shift+V is unused on this Omarchy install.** Super+V stays
+Universal paste. Super+Ctrl+V stays Clipboard manager. Super+S stays Toggle
+scratchpad. First inspect `omarchy menu keybindings --print`. Review
+`integrations/hyprland-bindings.lua` and copy its lines into
+`~/.config/hypr/bindings.lua`. It calls `hl.unbind("SUPER + SHIFT + V")` before
+the press/release pair. The installed `o.bind` helper forwards `{ release = true }`
+to `hl.bind`; the stock F9 voxtype binding uses the same API.
 
-This integration does not change **F9**, **Super+V**, **Super+Ctrl+X**, or voxtype.
-Do not hold both dictation shortcuts concurrently. Release S before Super;
-modifier release ordering and compositor input routing need live testing. If
-release is missed, the backend capture limit bounds recording; use Cancel. After
-making your own binding edit, run:
+This integration does not change **F9**, **Super+V**, **Super+Ctrl+V**,
+**Super+S**, **Super+Ctrl+X**, or voxtype. Do not hold both dictation shortcuts
+concurrently. Release V before Super/Shift; modifier release ordering and
+compositor input routing need live testing. If release is missed, the backend
+capture limit bounds recording; use Cancel. After making your own binding edit,
+run:
 
 ```sh
 hyprctl reload
@@ -195,8 +196,8 @@ To uninstall:
 3. Remove the copied `~/.config/systemd/user/omarchy-voice.service` and
    `~/.local/bin/omarchy-voice-edit-config`, then run
    `systemctl --user daemon-reload`.
-4. Remove the three opt-in Lua binding lines and reload/check Hyprland. Its stock
-   Toggle scratchpad binding returns when the user override is removed; verify it.
+4. Remove the three opt-in Lua binding lines and reload/check Hyprland. Super+S
+   should already be Toggle scratchpad; Super+Shift+V should become unbound.
 5. Remove the Python tool separately if desired. Keep or explicitly remove the
    voice TOML and model cache; neither should be deleted silently.
 

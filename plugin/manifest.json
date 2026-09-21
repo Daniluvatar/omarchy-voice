@@ -15,7 +15,7 @@
     "allowMultiple": false,
     "defaultSection": "right",
     "defaults": {
-      "shortcut": "SUPER + S",
+      "shortcut": "SUPER SHIFT + V",
       "activation": "Hold to talk"
     },
     "schema": [
@@ -24,13 +24,13 @@
         "type": "enum",
         "label": "Voice shortcut",
         "options": [
-          "SUPER + S",
+          "SUPER SHIFT + V",
           "SUPER + SEMICOLON",
           "SUPER + APOSTROPHE",
           "SUPER + GRAVE",
-          "SUPER SHIFT + V"
+          "SUPER + S"
         ],
-        "defaultValue": "SUPER + S",
+        "defaultValue": "SUPER SHIFT + V",
         "description": "Hold-to-talk key. Changing this only updates the panel label until the matching Hyprland binding is applied."
       },
       {

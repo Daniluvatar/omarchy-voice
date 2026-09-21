@@ -1,9 +1,10 @@
 -- OPT-IN ONLY. Review your bindings before copying into ~/.config/hypr/bindings.lua.
--- Stock Super+S is Toggle scratchpad; this snippet REPLACES that shortcut.
--- Super+V (Universal paste), F9, Super+Ctrl+X, and voxtype are left alone.
+-- Default Super+Shift+V is unused on stock Omarchy.
+-- Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager.
+-- Super+S stays Toggle scratchpad. F9 / Super+Ctrl+X / voxtype are left alone.
 -- o.bind passes its options to hl.bind; release=true is the installed API.
-hl.unbind("SUPER + S")
-o.bind("SUPER + S", "Voice: start push-to-talk", "omarchy-voice start")
-o.bind("SUPER + S", "Voice: stop push-to-talk", "omarchy-voice stop", { release = true })
--- Release S before Super. If a compositor misses the release, the backend's
--- maximum recording duration bounds capture; use the panel Cancel button.
+hl.unbind("SUPER + SHIFT + V")
+o.bind("SUPER + SHIFT + V", "Voice: start push-to-talk", "omarchy-voice start")
+o.bind("SUPER + SHIFT + V", "Voice: stop push-to-talk", "omarchy-voice stop", { release = true })
+-- Release V before Super/Shift. If a compositor misses the release, the
+-- backend's maximum recording duration bounds capture; use the panel Cancel button.

@@ -14,7 +14,7 @@ Panel {
     implicitHeight: button.implicitHeight
 
     readonly property string shortcutLabel: {
-        var value = root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER + S"
+        var value = root.settings && root.settings.shortcut ? String(root.settings.shortcut) : "SUPER SHIFT + V"
         return value.replace("SUPER", "Super").replace("SHIFT", "Shift")
     }
 
