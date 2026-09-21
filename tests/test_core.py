@@ -66,6 +66,18 @@ def test_router_strict():
     ]
 
 
+def test_open_terminal_uses_omarchy_default():
+    router = Router(Config(), runner=lambda *a, **k: pytest.fail("executed"))
+    assert router.plan(parse("open terminal")) == ["omarchy", "launch", "terminal"]
+    aliased = Router(
+        Config(aliases={"terminal": "foot.desktop"}),
+        registry=DesktopRegistry([], {"terminal": "foot.desktop"}),
+        runner=lambda *a, **k: pytest.fail("executed"),
+    )
+    with pytest.raises(VoiceError):
+        aliased.plan(parse("open terminal"))
+
+
 def test_permissions():
     with pytest.raises(VoiceError):
         Router(Config(permissions=()), runner=lambda *a, **k: None).plan(parse("mute"))

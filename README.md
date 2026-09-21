@@ -3,7 +3,7 @@
 Local-first voice commands for Omarchy. **v0.1 architectural MVP, not a finished public product.** Python handles audio, speech recognition and permission-checked actions; a native Omarchy Shell widget presents status and confirmation.
 
 ```text
-Hold Super+V → PipeWire → local Faster-Whisper → deterministic intent
+Hold Super+S → PipeWire → local Faster-Whisper → deterministic intent
                                                     ↓
                                 permission check → registered desktop action
                                                     ↑
@@ -26,7 +26,7 @@ Hold Super+V → PipeWire → local Faster-Whisper → deterministic intent
 
 | Spoken command | Result |
 | --- | --- |
-| Open Brave / Open terminal / Open Spotify | Launch an installed application |
+| Open Brave / Open terminal / Open Spotify | Launch an installed application (terminal uses Omarchy’s default terminal) |
 | Open / launch / start `<application>` | Exact installed name or configured alias |
 | Close window | Request explicit confirmation |
 | Workspace one / two / … / ten | Switch workspace 1–10 |
@@ -34,7 +34,7 @@ Hold Super+V → PipeWire → local Faster-Whisper → deterministic intent
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal** runs the fixed argv `omarchy launch terminal` unless you configure a `terminal` desktop alias. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
 
 ## Install backend
 
@@ -77,7 +77,7 @@ First inspect commands without changing the desktop:
 ```sh
 omarchy-voice parse 'workspace two'
 omarchy-voice run 'workspace two'             # Dry run: prints validated argv
-omarchy-voice run 'open terminal'             # Requires a resolvable desktop entry
+omarchy-voice run 'open terminal'             # Dry run: omarchy launch terminal
 omarchy-voice transcribe /absolute/path/command.wav  # Real local STT, dry-run action
 ```
 
@@ -112,9 +112,11 @@ Execution uses the daemon's configuration. The default for `run` and `transcribe
 
 ## Install the native widget and shortcut
 
-Follow [docs/integration.md](docs/integration.md) for manual installation, service startup, settings, updates and uninstall. Nothing in the development setup installs the widget or changes your keybindings.
+The widget lives in `plugin/` (not the repository root). Copy that folder, enable it, and put it on the bar. Do not use `omarchy plugin add` on this repository URL.
 
-**Super+V is currently Omarchy Universal paste.** The supplied hold-to-talk snippet replaces it only if you explicitly apply it. F9/Voxtype is untouched. The plugin root is `plugin/`, not the repository root; do not use `omarchy plugin add` on this repository URL.
+**Super+S is currently Toggle scratchpad.** Applying the supplied hold-to-talk snippet replaces that shortcut. Super+V (Universal paste) and F9/Voxtype stay untouched.
+
+On this machine the backend, service, bar widget, and Super+S binding are installed from this checkout. Other machines should follow [docs/integration.md](docs/integration.md).
 
 ## Development and validation
 
@@ -130,15 +132,15 @@ uv build
 
 ### Verification status
 
-- **99 automated tests passed**, covering backend unit/security/daemon integration and STT punctuation regressions. Wheel/source builds and the documented `uv tool install` command succeeded (installation tested in an isolated tool directory, not your live desktop).
+- **100 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, and the default-terminal launch path. Wheel/source builds and the documented `uv tool install` command succeeded.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
 - Real CLI dry-run for “workspace two” produced `hyprctl dispatch workspace 2` without running it; all doctor dependency checks passed in the development environment.
-- **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical Super+V release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
+- **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical Super+S release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
 
 ## Missing / intentionally deferred
 
-- Full live desktop acceptance and installation on this machine.
+- Full live microphone/shortcut acceptance. The bar widget and Super+S binding are installed on this machine; popup/focus and hold-to-talk still need a live check.
 - In-panel editable provider/permission/microphone configuration, model-download UI and graphical onboarding.
 - Additional production STT providers, streaming and persistent/shared model service (models currently run in isolated workers).
 - Internationalized command grammars, wake word, always-listening, cloud STT, LLM/Hermes integration, arbitrary shell, power actions and provider marketplace.

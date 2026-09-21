@@ -77,7 +77,7 @@ Panel {
                 }
                 Text {
                     width: parent.width
-                    text: "Hold Super+V to talk; release to process. Requires the opt-in keybinding. Escape closes this panel, not the pending action."
+                    text: "Hold Super+S to talk; release to process. Requires the opt-in keybinding (replaces scratchpad toggle). Escape closes this panel, not the pending action."
                     textFormat: Text.PlainText
                     wrapMode: Text.Wrap
                     color: Color.foreground

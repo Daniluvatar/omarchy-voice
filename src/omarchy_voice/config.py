@@ -23,7 +23,6 @@ class Config:
     aliases: dict = field(
         default_factory=lambda: {
             "brave": "brave-browser.desktop",
-            "terminal": "Alacritty.desktop",
             "spotify": "spotify.desktop",
         }
     )

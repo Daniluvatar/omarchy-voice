@@ -21,7 +21,8 @@ enabled = false
 allow = ["app.launch", "window.close", "workspace.switch", "audio.volume", "audio.mute", "system.lock"]
 
 # Exact installed desktop IDs; change these to match your installation.
+# Spoken "open terminal" uses `omarchy launch terminal` unless you add a
+# terminal alias here.
 [applications.aliases]
 brave = "brave-browser.desktop"
-terminal = "Alacritty.desktop"
 spotify = "spotify.desktop"

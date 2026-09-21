@@ -55,6 +55,7 @@ install -Dm644 integrations/omarchy-voice.service "$HOME/.config/systemd/user/om
 systemctl --user daemon-reload
 systemctl --user enable --now omarchy-voice.service
 omarchy plugin enable local.omarchy-voice
+omarchy bar put local.omarchy-voice --section right --index 0
 ```
 
 If using a non-default XDG config directory, substitute it for `~/.config` in
@@ -71,20 +72,21 @@ does not stop capture. Multiple monitor bars may instantiate separate readers;
 a pending token can consequently appear on more than one display. Authorization
 must remain one-shot and expire in the backend.
 
-## Super+V hold-to-talk: explicit shortcut replacement
+## Super+S hold-to-talk: explicit shortcut replacement
 
-**Stock Super+V is Universal paste. This choice replaces it.** First inspect
-`omarchy menu keybindings --print`. Review `integrations/hyprland-bindings.lua`
-and manually copy its lines into `~/.config/hypr/bindings.lua` only if you accept
-that conflict. It calls `hl.unbind("SUPER + V")` before the press/release pair.
-The installed `o.bind` helper forwards `{ release = true }` to `hl.bind`; the
-stock F9 voxtype binding uses the same API.
+**Stock Super+S is Toggle scratchpad. This choice replaces it.** Super+V
+(Universal paste) is left alone. First inspect `omarchy menu keybindings --print`.
+Review `integrations/hyprland-bindings.lua` and copy its lines into
+`~/.config/hypr/bindings.lua` only if you accept that conflict. It calls
+`hl.unbind("SUPER + S")` before the press/release pair. The installed `o.bind`
+helper forwards `{ release = true }` to `hl.bind`; the stock F9 voxtype binding
+uses the same API.
 
-This integration does not change **F9**, **Super+Ctrl+X**, or voxtype. Do not hold
-both dictation shortcuts concurrently. Release V before Super; modifier release
-ordering and compositor input routing need live testing. If release is missed,
-the backend capture limit bounds recording; use Cancel. After making your own
-binding edit, run:
+This integration does not change **F9**, **Super+V**, **Super+Ctrl+X**, or voxtype.
+Do not hold both dictation shortcuts concurrently. Release S before Super;
+modifier release ordering and compositor input routing need live testing. If
+release is missed, the backend capture limit bounds recording; use Cancel. After
+making your own binding edit, run:
 
 ```sh
 hyprctl reload
@@ -111,8 +113,8 @@ the backend's retention and permission policy independently.
 
 “Open configuration…” invokes the shipped fixed helper argv. It opens
 `$XDG_CONFIG_HOME/omarchy-voice/config.toml` (default
-`~/.config/omarchy-voice/config.toml`) in **Alacritty + Neovim**. Both must be
-installed. The helper creates only the parent directory when explicitly invoked;
+`~/.config/omarchy-voice/config.toml`) with `omarchy launch config editor`.
+The helper creates only the parent directory when explicitly invoked;
 it does not overwrite an existing file. A missing/empty TOML uses backend
 defaults. Example settings to enter (check README for the full current schema):
 
@@ -189,7 +191,7 @@ To uninstall:
    `~/.local/bin/omarchy-voice-edit-config`, then run
    `systemctl --user daemon-reload`.
 4. Remove the three opt-in Lua binding lines and reload/check Hyprland. Its stock
-   Universal paste binding returns when the user override is removed; verify it.
+   Toggle scratchpad binding returns when the user override is removed; verify it.
 5. Remove the Python tool separately if desired. Keep or explicitly remove the
    voice TOML and model cache; neither should be deleted silently.
 

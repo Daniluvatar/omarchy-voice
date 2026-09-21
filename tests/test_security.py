@@ -3,6 +3,7 @@
 import json
 from pathlib import Path
 import socket
+import stat
 import subprocess
 import sys
 import threading
@@ -168,7 +169,8 @@ def test_server_ipc_and_duplicate_lock(short_runtime, monkeypatch):
             if path.exists():
                 break
             time.sleep(0.01)
-        assert path.stat().st_mode & 0o777 == 0o600
+        mode = path.stat().st_mode
+        assert stat.S_ISSOCK(mode) and mode & 0o077 == 0
         assert request("status")["state"] == "idle"
         assert request("start")["state"] == "listening"
         assert request("cancel")["state"] == "idle"

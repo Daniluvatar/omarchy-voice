@@ -9,4 +9,4 @@ if not config_home.is_absolute():
 path = config_home / "omarchy-voice" / "config.toml"
 path.parent.mkdir(parents=True, exist_ok=True)
 # An empty/new file means backend defaults. No automatic config replacement.
-os.execvp("alacritty", ["alacritty", "-e", "nvim", str(path)])
+os.execvp("omarchy", ["omarchy", "launch", "config", "editor", str(path)])

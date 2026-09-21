@@ -408,7 +408,7 @@ def request(command, **parameters):
         if (
             not stat.S_ISSOCK(info.st_mode)
             or info.st_uid != os.getuid()
-            or stat.S_IMODE(info.st_mode) != 0o600
+            or info.st_mode & 0o077
         ):
             raise VoiceError("Unsafe service socket")
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:

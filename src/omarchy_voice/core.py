@@ -180,6 +180,10 @@ class Router:
             value = p["application"]
             if type(value) is not str or not APP.fullmatch(value) or ".." in value:
                 raise VoiceError("Invalid application")
+            # Spoken "terminal" uses Omarchy's default terminal unless the
+            # user configured an exact desktop alias. argv is fixed.
+            if value == "terminal" and "terminal" not in self.config.aliases:
+                return ["omarchy", "launch", "terminal"]
             return ["gio", "launch", str(self.registry.resolve(value))]
         if a == "workspace.switch":
             if type(p["number"]) is not int or not 1 <= p["number"] <= 10:
