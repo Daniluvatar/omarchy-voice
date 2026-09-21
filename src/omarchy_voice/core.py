@@ -28,8 +28,11 @@ APP_ALIASES = {
     "brave": "brave",
     "brave browser": "brave",
     "browser": "brave",
+    "chromium": "brave",
     "terminal": "terminal",
     "term": "terminal",
+    "termina": "terminal",
+    "terminator": "terminal",
     "ghostty": "terminal",
     "spotify": "spotify",
 }
@@ -49,6 +52,9 @@ def parse(text: str) -> Intent:
     # punctuation inside commands or compound instructions.
     if text.endswith((".", "?", "!")):
         text = text[:-1].rstrip()
+    # tiny.en often inserts a comma after Open: "Open, brave."
+    text = text.replace(",", " ")
+    text = " ".join(text.split())
     # A missed PTT release records the same command twice.
     if ". " in text:
         first, rest = text.split(". ", 1)
