@@ -7,6 +7,46 @@ import json
 import os
 import re
 import subprocess
+import threading
+
+
+_RUN_COMMAND = subprocess.run
+APP_STARTUP_SECONDS = 0.25
+
+
+def _launch_application(argv):
+    """Observe startup briefly, never impose a lifetime on the application."""
+    process = None
+    spawned = threading.Event()
+
+    def reap():
+        spawned.wait()
+        if process is not None:
+            process.wait()
+
+    # Reserve the reaper before spawning: thread exhaustion must not leave an
+    # application running without an owner to reap it. Daemon waiters neither
+    # kill applications nor delay interpreter shutdown.
+    waiter = threading.Thread(target=reap, daemon=True, name="app-reaper")
+    try:
+        waiter.start()
+    except RuntimeError as exc:
+        raise OSError("Cannot start application reaper") from exc
+    try:
+        process = subprocess.Popen(
+            argv,
+            shell=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            close_fds=True,
+            start_new_session=True,
+        )
+    finally:
+        spawned.set()
+    waiter.join(APP_STARTUP_SECONDS)
+    if process.returncode not in (None, 0):
+        raise subprocess.CalledProcessError(process.returncode, argv)
 
 
 class VoiceError(Exception):
@@ -66,6 +106,7 @@ APP_ALIASES = {
     "browser": "brave",
     "chromium": "brave",
     "terminal": "terminal",
+    "the terminal": "terminal",
     "term": "terminal",
     "termina": "terminal",
     "terminator": "terminal",
@@ -447,6 +488,11 @@ class Router:
         if intent.action in ("window.move_monitor", "window.move_workspace"):
             self.validate_window(window_address)
         try:
+            # Honor injected/replaced runners: tests and embedding callers must
+            # never unexpectedly launch a real desktop application.
+            if intent.action == "app.launch" and self.runner is _RUN_COMMAND:
+                _launch_application(argv)
+                return
             self.runner(
                 argv,
                 check=True,

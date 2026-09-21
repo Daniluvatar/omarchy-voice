@@ -38,7 +38,9 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`, `switch to workspace four`, `move window to the left workspace`) and still use the window focused when you press F5. **Move … left/right** without `workspace` is a monitor move; **… left/right workspace** is a workspace move. Common STT mishears such as **water space** / **world space** and **for** / **forward** for four are normalized. Numbered window labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open the terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`, `switch to workspace four`, `move window to the left workspace`) and still use the window focused when you press F5. **Move … left/right** without `workspace` is a monitor move; **… left/right workspace** is a workspace move. Common STT mishears such as **water space** / **world space** and **for** / **forward** for four are normalized. Numbered window labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+
+Application launches use validated argv without a shell, detached standard streams and a new process session. The backend watches the launcher for up to 250 ms: missing executables and immediate nonzero exits fail; a still-running launcher is accepted and reaped asynchronously when it exits, without a lifetime timeout or termination. Acceptance is not proof that a window appeared; failures after the startup window are not reported to the UI. This is process-session isolation, not escape from a systemd service cgroup: service shutdown can still affect children that have not been handed off to an application scope. Other desktop actions retain their 10-second command timeout.
 
 ## Install backend
 
@@ -127,7 +129,7 @@ On this machine the backend, service, bar widget, and F5 binding are installed f
 
 ```sh
 uv sync --python 3.12 --extra test --extra stt
-uv run --extra test --extra stt pytest -q
+XDG_STATE_HOME="$(mktemp -d "${TMPDIR:?}/voice-tests.XXXXXX")" uv run --extra test --extra stt pytest -q
 uv run --extra stt omarchy-voice run 'workspace two'
 python3 integrations/validate.py
 uv build
@@ -137,9 +139,9 @@ uv build
 
 ### Verification status
 
-- **147 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor/workspace moves.
+- **167 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor/workspace moves. Launch regressions include immediate failure detection, injected runners, permissions, narrow terminal-article parsing, and a harmless real subprocess that survives beyond 10 seconds and is reaped after exit.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
-- Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
+- “Open the terminal” parses as `app.launch` for `terminal`; its dry-run produces `omarchy launch terminal`. Reinstall and restart the user service after updating the backend. The lifetime regression uses a harmless Python fixture, not a live terminal window.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
 - Real CLI dry-run for “workspace two” produced `hyprctl dispatch hl.dsp.focus({workspace="2"})` without running it; all doctor dependency checks passed in the development environment.
 - **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical F5 release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
