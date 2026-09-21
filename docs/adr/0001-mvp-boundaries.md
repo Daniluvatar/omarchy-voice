@@ -14,7 +14,8 @@ Status: accepted for v0.1 implementation.
 - Keep existing Voxtype/F9 dictation untouched. `voxtype transcribe --help` confirms an audio-file transcription command exists on the inspected installation; output semantics and shared model lifecycle remain unvalidated and are not v0.1 dependencies.
 - Native Omarchy plugin compatibility is checked against the installed shell. Never edit the packaged source to integrate this project.
 - Spoken “open terminal” uses the fixed argv `omarchy launch terminal` unless a `terminal` desktop alias is configured. This avoids a hard-coded Alacritty desktop ID that is not present on stock Omarchy.
-- Window monitor moves use the window focused when hold-to-talk starts. Spoken commands are `move window left`, `move window right`, and `move window to other screen` (plus `move this …`). Numbered window labels are rejected. Hyprland 0.56 dispatchers are Lua `hl.dsp.*`, not the old `movewindow`/`closewindow`/`workspace` strings.
+- Window monitor moves use the window focused when hold-to-talk starts. Spoken commands include `move this window to the left` and `move it to the other screen`. Numbered window labels are rejected. Hyprland 0.56 dispatchers are Lua `hl.dsp.*`, not the old `movewindow`/`closewindow`/`workspace` strings.
+- Window workspace moves also use that captured window. `switch to workspace four` / `move this window to workspace 4` place it on workspace 4. `move window to the left workspace` / `switch to the next workspace` move one workspace over. Bare `workspace four` still only switches focus.
 - v0.1 activation is hold-to-talk only. The widget can display a preferred shortcut, but Hyprland still owns the actual binding. Super+V (paste), Super+Ctrl+V (clipboard manager), Super+S (scratchpad), and F9 (Voxtype) stay occupied. Super+Shift+V is a poor hold chord because releasing Shift first often never fires stop; the current default is unused F5.
 
 ## Consequences

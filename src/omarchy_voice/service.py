@@ -193,7 +193,7 @@ class Controller:
             )
             self._set("confirmation", "Confirm closing the original window")
             return
-        if intent.action == "window.move_monitor":
+        if intent.action in ("window.move_monitor", "window.move_workspace"):
             address = self.router.validate_window(self.window_address)
             self._queue_action(intent, window_address=address)
             return
@@ -238,7 +238,11 @@ class Controller:
             try:
                 intent = parse(text)
                 write_log("INFO", "text-command", text=text, action=intent.action)
-                if intent.action in ("window.close", "window.move_monitor"):
+                if intent.action in (
+                    "window.close",
+                    "window.move_monitor",
+                    "window.move_workspace",
+                ):
                     self.window_address = self.router.capture_window()
                 self._apply(intent)
             except VoiceError as exc:

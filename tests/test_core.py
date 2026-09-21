@@ -39,6 +39,12 @@ from omarchy_voice.service import Controller, runtime_dir
         ("move window to other screen", "window.move_monitor", {"direction": "other"}),
         ("move this to other screen", "window.move_monitor", {"direction": "other"}),
         ("move this window to the other monitor", "window.move_monitor", {"direction": "other"}),
+        ("switch to workspace four", "window.move_workspace", {"number": 4}),
+        ("switch to work space 4", "window.move_workspace", {"number": 4}),
+        ("move this window to workspace 4", "window.move_workspace", {"number": 4}),
+        ("move window to the left workspace", "window.move_workspace", {"direction": "left"}),
+        ("switch to the next workspace", "window.move_workspace", {"direction": "right"}),
+        ("move this to previous workspace", "window.move_workspace", {"direction": "left"}),
     ],
 )
 def test_parse(text, action, params):
@@ -61,6 +67,8 @@ def test_parse(text, action, params):
         "move window one left",
         "move window 1 to left screen",
         "move brave left",
+        "switch to workspace 11",
+        "move window to workspace zero",
     ],
 )
 def test_reject(text):

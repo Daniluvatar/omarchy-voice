@@ -18,6 +18,7 @@ ACTIONS = frozenset(
         "app.launch",
         "window.close",
         "window.move_monitor",
+        "window.move_workspace",
         "workspace.switch",
         "audio.volume",
         "audio.mute",
@@ -26,10 +27,35 @@ ACTIONS = frozenset(
 )
 WINDOW_ADDRESS = re.compile(r"0x[0-9a-fA-F]{1,16}\Z")
 MONITOR_DIRECTIONS = ("left", "right", "other")
+WORKSPACE_WORDS = (
+    "one",
+    "two",
+    "three",
+    "four",
+    "five",
+    "six",
+    "seven",
+    "eight",
+    "nine",
+    "ten",
+)
 MOVE_MONITOR = re.compile(
     r"\Amove(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)"
     r"(?:\s+to(?:\s+the)?)?\s+(left|right|other)"
     r"(?:\s+(?:screen|monitor|display))?\Z"
+)
+MOVE_TO_WORKSPACE = re.compile(
+    r"\A(?:switch|move)"
+    r"(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)?"
+    r"\s+to(?:\s+the)?"
+    r"\s+workspace\s+"
+    r"(one|two|three|four|five|six|seven|eight|nine|ten|[1-9]|10)\Z"
+)
+MOVE_WORKSPACE_SIDE = re.compile(
+    r"\A(?:switch|move)"
+    r"(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)?"
+    r"\s+to(?:\s+the)?"
+    r"\s+(?:(left|right|previous|next)\s+workspace|workspace\s+(left|right|previous|next))\Z"
 )
 APP = re.compile(r"[a-z0-9][a-z0-9 ._+-]{0,79}\Z")
 APP_ALIASES = {
@@ -44,6 +70,16 @@ APP_ALIASES = {
     "ghostty": "terminal",
     "spotify": "spotify",
 }
+
+
+def _workspace_number(value):
+    if type(value) is not str:
+        return None
+    if value in WORKSPACE_WORDS:
+        return WORKSPACE_WORDS.index(value) + 1
+    if value in [str(i) for i in range(1, 11)]:
+        return int(value)
+    return None
 
 
 @dataclass(frozen=True)
@@ -62,6 +98,7 @@ def parse(text: str) -> Intent:
         text = text[:-1].rstrip()
     # tiny.en often inserts a comma after Open: "Open, brave."
     text = text.replace(",", " ")
+    text = re.sub(r"\bwork\s+space\b", "workspace", text)
     text = " ".join(text.split())
     # A missed PTT release records the same command twice.
     if ". " in text:
@@ -80,24 +117,22 @@ def parse(text: str) -> Intent:
     move = MOVE_MONITOR.fullmatch(text)
     if move:
         return Intent("window.move_monitor", {"direction": move[1]})
-    words = [
-        "one",
-        "two",
-        "three",
-        "four",
-        "five",
-        "six",
-        "seven",
-        "eight",
-        "nine",
-        "ten",
-    ]
+    numbered = MOVE_TO_WORKSPACE.fullmatch(text)
+    if numbered:
+        number = _workspace_number(numbered[1])
+        if number is None:
+            raise VoiceError("Command not recognized")
+        return Intent("window.move_workspace", {"number": number})
+    side = MOVE_WORKSPACE_SIDE.fullmatch(text)
+    if side:
+        label = side[1] or side[2]
+        direction = "left" if label in ("left", "previous") else "right"
+        return Intent("window.move_workspace", {"direction": direction})
     if text.startswith("workspace "):
         value = text.removeprefix("workspace ")
-        if value in words:
-            return Intent("workspace.switch", {"number": words.index(value) + 1})
-        if value in [str(i) for i in range(1, 11)]:
-            return Intent("workspace.switch", {"number": int(value)})
+        number = _workspace_number(value)
+        if number is not None:
+            return Intent("workspace.switch", {"number": number})
     match = re.fullmatch(r"(?:open|launch|start) (.+)", text)
     if match and APP.fullmatch(match[1]) and ".." not in match[1]:
         application = APP_ALIASES.get(match[1], match[1])
@@ -208,14 +243,18 @@ class Router:
         a, p = intent.action, intent.parameters
         if a not in ACTIONS or a not in self.config.permissions or type(p) is not dict:
             raise VoiceError("Action not permitted")
-        keys = {
-            "app.launch": {"application"},
-            "workspace.switch": {"number"},
-            "audio.volume": {"direction"},
-            "window.move_monitor": {"direction"},
-        }.get(a, set())
-        if set(p) != keys:
-            raise VoiceError("Invalid action parameters")
+        if a == "window.move_workspace":
+            if set(p) not in ({"number"}, {"direction"}):
+                raise VoiceError("Invalid action parameters")
+        else:
+            keys = {
+                "app.launch": {"application"},
+                "workspace.switch": {"number"},
+                "audio.volume": {"direction"},
+                "window.move_monitor": {"direction"},
+            }.get(a, set())
+            if set(p) != keys:
+                raise VoiceError("Invalid action parameters")
         if a == "app.launch":
             value = p["application"]
             if type(value) is not str or not APP.fullmatch(value) or ".." in value:
@@ -269,6 +308,14 @@ class Router:
                     'hl.dsp.window.move({monitor="<monitor>", window=hl.get_window("address:<original-window>")})',
                 ]
             return self._move_monitor_argv(p["direction"], window_address)
+        if a == "window.move_workspace":
+            if window_address is None:
+                return [
+                    "hyprctl",
+                    "dispatch",
+                    'hl.dsp.window.move({workspace="<workspace>", window=hl.get_window("address:<original-window>")})',
+                ]
+            return self._move_workspace_argv(p, window_address)
         return {
             "audio.mute": ["wpctl", "set-mute", "@DEFAULT_AUDIO_SINK@", "toggle"],
             "system.lock": ["omarchy", "system", "lock"],
@@ -276,17 +323,12 @@ class Router:
 
     def _move_monitor_argv(self, direction, window_address):
         address = self.validate_window(window_address)
-        clients = self._hypr_json("clients")
-        monitors = self._hypr_json("monitors")
-        if type(clients) is not list or type(monitors) is not list:
-            raise VoiceError("Cannot read window layout")
-        current = None
-        for client in clients:
-            if type(client) is dict and client.get("address") == address:
-                current = client
-                break
-        if current is None or type(current.get("monitor")) is not int:
+        current = self._client(address)
+        if type(current.get("monitor")) is not int:
             raise VoiceError("Original window is gone")
+        monitors = self._hypr_json("monitors")
+        if type(monitors) is not list:
+            raise VoiceError("Cannot read window layout")
         layout = []
         seen = set()
         for monitor in monitors:
@@ -333,6 +375,48 @@ class Router:
             + "})",
         ]
 
+    def _move_workspace_argv(self, parameters, window_address):
+        address = self.validate_window(window_address)
+        if set(parameters) == {"number"}:
+            number = parameters["number"]
+            if type(number) is not int or not 1 <= number <= 10:
+                raise VoiceError("Invalid workspace")
+            return self._window_move_workspace_argv(address, number)
+        if set(parameters) != {"direction"} or parameters["direction"] not in (
+            "left",
+            "right",
+        ):
+            raise VoiceError("Invalid workspace direction")
+        current = self._client(address)
+        workspace = current.get("workspace")
+        ident = workspace.get("id") if type(workspace) is dict else workspace
+        if type(ident) is not int or not 1 <= ident <= 10:
+            raise VoiceError("Cannot identify original workspace")
+        target = ident - 1 if parameters["direction"] == "left" else ident + 1
+        if not 1 <= target <= 10:
+            raise VoiceError("No workspace in that direction")
+        return self._window_move_workspace_argv(address, target)
+
+    def _window_move_workspace_argv(self, address, number):
+        return [
+            "hyprctl",
+            "dispatch",
+            'hl.dsp.window.move({workspace="'
+            + str(number)
+            + '", window='
+            + self.lua_window_ref(address)
+            + "})",
+        ]
+
+    def _client(self, address):
+        clients = self._hypr_json("clients")
+        if type(clients) is not list:
+            raise VoiceError("Cannot read window layout")
+        for client in clients:
+            if type(client) is dict and client.get("address") == address:
+                return client
+        raise VoiceError("Original window is gone")
+
     def _hypr_json(self, command):
         try:
             result = self.runner(
@@ -352,7 +436,7 @@ class Router:
             if confirmed is not True:
                 raise VoiceError("Explicit confirmation required")
             self.validate_window(window_address)
-        if intent.action == "window.move_monitor":
+        if intent.action in ("window.move_monitor", "window.move_workspace"):
             self.validate_window(window_address)
         try:
             self.runner(

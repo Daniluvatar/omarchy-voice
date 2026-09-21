@@ -156,8 +156,8 @@ def test_async_action_failure_visible_and_recoverable(tmp_path):
     c.close()
 
 
-def _layout_runner(address, monitor_id, calls):
-    clients = [{"address": address, "monitor": monitor_id}]
+def _layout_runner(address, monitor_id, calls, workspace_id=2):
+    clients = [{"address": address, "monitor": monitor_id, "workspace": {"id": workspace_id}}]
     monitors = [
         {"id": 0, "name": "HDMI-A-1", "x": 0},
         {"id": 1, "name": "DP-1", "x": 1536},
@@ -214,3 +214,31 @@ def test_move_already_on_left_fails():
 def test_move_rejects_numbered_windows():
     with pytest.raises(VoiceError):
         parse("move window one left")
+
+
+def test_move_to_workspace_four():
+    router = Router(Config(), runner=_layout_runner("0x123abc", 1, []))
+    assert router.plan(
+        parse("switch to workspace four"), window_address="0x123abc"
+    ) == [
+        "hyprctl",
+        "dispatch",
+        'hl.dsp.window.move({workspace="4", window=hl.get_window("address:0x123abc")})',
+    ]
+
+
+def test_move_window_to_left_workspace():
+    router = Router(Config(), runner=_layout_runner("0x123abc", 1, [], workspace_id=4))
+    assert router.plan(
+        parse("move window to the left workspace"), window_address="0x123abc"
+    ) == [
+        "hyprctl",
+        "dispatch",
+        'hl.dsp.window.move({workspace="3", window=hl.get_window("address:0x123abc")})',
+    ]
+
+
+def test_move_window_to_left_workspace_from_one_fails():
+    router = Router(Config(), runner=_layout_runner("0x123abc", 1, [], workspace_id=1))
+    with pytest.raises(VoiceError, match="No workspace in that direction"):
+        router.plan(parse("move to the left workspace"), window_address="0x123abc")

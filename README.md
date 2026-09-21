@@ -31,12 +31,14 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 | Close window | Request explicit confirmation |
 | Move this / this window / the window left or right | Move the focused window to that monitor |
 | Move this window to the other screen | Move the focused window to the other monitor |
-| Workspace one / two / … / ten | Switch workspace 1–10 |
+| Switch / move to workspace four | Move the focused window to workspace 4 |
+| Move window to the left / right / next / previous workspace | Move the focused window one workspace over |
+| Workspace one / two / … / ten | Switch focus to workspace 1–10 |
 | Volume up / Volume down | Adjust output volume |
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`) and still use the window focused when you press F5. Numbered labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`, `switch to workspace four`, `move window to the left workspace`) and still use the window focused when you press F5. **Move … left/right** without `workspace` is a monitor move; **… left/right workspace** is a workspace move. Numbered window labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
 
 ## Install backend
 
@@ -70,7 +72,7 @@ Review [examples/config.toml](examples/config.toml) before enabling the daemon. 
 allow = []
 ```
 
-Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration changes require restarting the daemon. `--config PATH` is a global option **before** the subcommand.
+Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration changes require restarting the daemon. `--config PATH` is a global option **before** the subcommand.
 
 ## Run without installing the desktop integration
 
@@ -135,7 +137,7 @@ uv build
 
 ### Verification status
 
-- **129 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor moves.
+- **140 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, spoken app aliases, local diagnostic logging, and focused-window monitor/workspace moves.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
 - Spoken “open terminal” dry-run produces `omarchy launch terminal`. The previously running daemon still resolved “terminal” as a desktop ID; restart the user service after installing a new backend.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
