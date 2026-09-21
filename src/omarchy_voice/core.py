@@ -40,19 +40,21 @@ WORKSPACE_WORDS = (
     "ten",
 )
 MOVE_MONITOR = re.compile(
-    r"\Amove(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)"
+    r"\A(?:move\s+)?(?:(?:this|it)(?:\s+window)?|(?:the\s+)?window)"
     r"(?:\s+to(?:\s+the)?)?\s+(left|right|other)"
     r"(?:\s+(?:screen|monitor|display))?\Z"
 )
 MOVE_TO_WORKSPACE = re.compile(
     r"\A(?:switch|move)"
+    r"(?:\s+in)?"
     r"(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)?"
     r"\s+to(?:\s+the)?"
     r"\s+workspace\s+"
-    r"(one|two|three|four|five|six|seven|eight|nine|ten|[1-9]|10)\Z"
+    r"(one|two|three|four|for|fore|forward|five|six|seven|eight|nine|ten|[1-9]|10)\Z"
 )
 MOVE_WORKSPACE_SIDE = re.compile(
     r"\A(?:switch|move)"
+    r"(?:\s+in)?"
     r"(?:\s+(?:this|it)(?:\s+window)?|\s+(?:the\s+)?window)?"
     r"\s+to(?:\s+the)?"
     r"\s+(?:(left|right|previous|next)\s+workspace|workspace\s+(left|right|previous|next))\Z"
@@ -75,6 +77,8 @@ APP_ALIASES = {
 def _workspace_number(value):
     if type(value) is not str:
         return None
+    if value in ("for", "fore", "forward"):
+        value = "four"
     if value in WORKSPACE_WORDS:
         return WORKSPACE_WORDS.index(value) + 1
     if value in [str(i) for i in range(1, 11)]:
@@ -98,7 +102,11 @@ def parse(text: str) -> Intent:
         text = text[:-1].rstrip()
     # tiny.en often inserts a comma after Open: "Open, brave."
     text = text.replace(",", " ")
+    text = re.sub(r"\b(?:water|world)\s+space\b", "workspace", text)
     text = re.sub(r"\bwork\s+space\b", "workspace", text)
+    text = re.sub(r"\bthese\b", "this", text)
+    text = re.sub(r"\b(?:to|the)\s+rest\b", lambda m: m.group(0).split()[0] + " right", text)
+    text = re.sub(r"^(?:no|now|oh)\s+", "", text)
     text = " ".join(text.split())
     # A missed PTT release records the same command twice.
     if ". " in text:
