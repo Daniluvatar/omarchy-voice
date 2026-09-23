@@ -68,6 +68,8 @@ class Controller:
         self.pending = None
         self.window_address = None
         self.action_thread = None
+        self.alias_mode = False
+        self.alias_text = ""
 
     def _set(self, state, message):
         self.state = state
@@ -85,22 +87,31 @@ class Controller:
             result = {"state": self.state, "message": self.message}
             if self.pending:
                 result["confirmation_token"] = self.pending[1]
+            if self.state == "alias_review":
+                result["alias_text"] = self.alias_text
             return result
 
-    def start(self):
+    def start_alias(self):
+        return self.start(alias_mode=True)
+
+    def start(self, alias_mode=False):
         with self.lock:
             self._expire()
-            if self.state not in ("idle", "error"):
+            if self.state not in ("idle", "error", "alias_review"):
                 raise VoiceError("Voice service is busy")
             self.generation += 1
             self.event = threading.Event()
             self.pending = None
+            self.alias_mode = alias_mode
+            self.alias_text = ""
             write_log("INFO", "listen-start")
             # Failure to identify focus disables close/move, not unrelated commands.
-            try:
-                self.window_address = self.router.capture_window()
-            except VoiceError:
-                self.window_address = None
+            self.window_address = None
+            if not alias_mode:
+                try:
+                    self.window_address = self.router.capture_window()
+                except VoiceError:
+                    pass
             recorder = None
             try:
                 recorder = self.recorder_factory()
@@ -146,19 +157,27 @@ class Controller:
             self._set("transcribing", "Transcribing locally")
             self.thread = threading.Thread(
                 target=self._work,
-                args=(self.generation, recorder, self.worker, audio, self.event),
+                args=(self.generation, recorder, self.worker, audio, self.event, self.alias_mode),
                 daemon=True,
             )
             self.thread.start()
             return self.status()
 
-    def _work(self, generation, recorder, worker, audio, event):
+    def _work(self, generation, recorder, worker, audio, event, alias_mode=False):
         try:
             try:
                 text = worker.transcribe(audio, self.config.language, event)
                 write_log("INFO", "transcribed", text=text)
             finally:
                 recorder.cleanup()
+            if alias_mode:
+                if type(text) is not str or not text.strip() or len(text) > 512:
+                    raise VoiceError("No supported speech command detected")
+                with self.lock:
+                    if generation == self.generation and not event.is_set():
+                        self.alias_text = text
+                        self._set("alias_review", "Review the heard phrase; no action was run")
+                return
             intent = parse(text)
             write_log("INFO", "intent", action=intent.action, parameters=intent.parameters)
             with self.lock:
@@ -274,6 +293,8 @@ class Controller:
             self.generation += 1
             self.event.set()
             self.pending = None
+            self.alias_mode = False
+            self.alias_text = ""
             if self.timer:
                 self.timer.cancel()
                 self.timer = None
@@ -333,6 +354,7 @@ def dispatch(controller, request):
     allowed = {
         "status": set(),
         "start": set(),
+        "start_alias": set(),
         "stop": set(),
         "cancel": set(),
         "confirm": {"token"},

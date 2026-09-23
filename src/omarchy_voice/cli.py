@@ -9,8 +9,9 @@ import signal
 import sys
 import threading
 import wave
+from .aliases import read_aliases, remove_alias, set_alias
 from .config import load_config
-from .core import VoiceError, Router, parse
+from .core import DesktopRegistry, VoiceError, Router, parse
 from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
 from .service import Controller, Server, request, runtime_dir
@@ -23,10 +24,12 @@ def parser():
     for command in (
         "serve",
         "start",
+        "start-alias",
         "stop",
         "cancel",
         "status",
         "providers",
+        "apps",
         "doctor",
         "download-model",
         "logs",
@@ -42,6 +45,14 @@ def parser():
     sp = sub.add_parser("transcribe")
     sp.add_argument("file", type=Path)
     sp.add_argument("--execute", action="store_true")
+    alias = sub.add_parser("alias")
+    alias_commands = alias.add_subparsers(dest="alias_command", required=True)
+    alias_commands.add_parser("list")
+    add = alias_commands.add_parser("set")
+    add.add_argument("phrase")
+    add.add_argument("application")
+    remove = alias_commands.add_parser("remove")
+    remove.add_argument("phrase")
     return p
 
 
@@ -89,8 +100,17 @@ def main(argv=None):
             signal.signal(signal.SIGINT, shutdown)
             server.serve()
             return 0
-        if command in ("start", "stop", "cancel", "status"):
-            result = request(command)
+        if command in ("start", "start-alias", "stop", "cancel", "status"):
+            result = request(command.replace("-", "_"))
+        elif command == "alias":
+            if args.alias_command == "list":
+                result = {"state": "idle", "message": "Configured spoken aliases", "aliases": read_aliases()}
+            elif args.alias_command == "set":
+                phrase, desktop_id = set_alias(args.phrase, args.application, config)
+                result = {"state": "idle", "message": "Alias saved; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
+            else:
+                phrase = remove_alias(args.phrase)
+                result = {"state": "idle", "message": "Alias removed; restart voice service to apply", "phrase": phrase}
         elif command == "confirm":
             result = request("confirm", token=args.token)
         elif command == "parse":
@@ -123,6 +143,8 @@ def main(argv=None):
                     }
                 ],
             }
+        elif command == "apps":
+            result = {"state": "idle", "message": "Installed applications", "apps": DesktopRegistry().applications()}
         elif command == "doctor":
             checks = {
                 name: shutil.which(name) is not None

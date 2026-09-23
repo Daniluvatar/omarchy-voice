@@ -1,11 +1,12 @@
 """Strict TOML configuration. Missing files use safe local defaults."""
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 import os
 import re
 import tomllib
 from .core import ACTIONS, APP, VoiceError
+from .aliases import read_aliases
 
 
 @dataclass(frozen=True)
@@ -86,7 +87,8 @@ def load_config(path=None):
             data = tomllib.load(f)
     except FileNotFoundError:
         if not explicit:
-            return Config()
+            defaults = Config()
+            return replace(defaults, aliases={**defaults.aliases, **read_aliases()})
         raise VoiceError("Configuration not found")
     except (OSError, UnicodeError, tomllib.TOMLDecodeError, RecursionError) as exc:
         raise VoiceError("Cannot load configuration") from exc
@@ -119,6 +121,7 @@ def load_config(path=None):
             }.get(section, {}).get(key, key)
             values[target] = value
     try:
-        return Config(**values)
+        config = Config(**values)
+        return replace(config, aliases={**config.aliases, **read_aliases()})
     except (TypeError, ValueError) as exc:
         raise VoiceError("Invalid configuration") from exc

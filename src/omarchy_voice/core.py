@@ -6,12 +6,81 @@ import configparser
 import json
 import os
 import re
+import stat
 import subprocess
 import threading
 
 
 _RUN_COMMAND = subprocess.run
 APP_STARTUP_SECONDS = 0.25
+ICON_NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]{0,127}\Z")
+
+
+def _desktop_icon(value, index=None):
+    """Theme name or absolute path from a trusted desktop file. Never Exec."""
+    if type(value) is not str:
+        return ""
+    icon = value.strip()
+    if not icon or len(icon) > 256 or any(ord(c) < 32 for c in icon):
+        return ""
+    if icon.startswith("/"):
+        path = Path(icon)
+        if path.is_absolute() and path.suffix.lower() in {".png", ".svg", ".xpm"} and ".." not in path.parts:
+            return str(path)
+        return ""
+    if icon.startswith(("file:", "image:", "~")):
+        return ""
+    if not ICON_NAME.fullmatch(icon):
+        return ""
+    if index and icon in index:
+        return index[icon]
+    return icon
+
+
+def _icon_roots():
+    home = Path.home()
+    roots = [home / ".icons"]
+    data_home = Path(os.environ.get("XDG_DATA_HOME", str(home / ".local/share")))
+    if data_home.is_absolute():
+        roots.append(data_home / "icons")
+    for entry in os.environ.get("XDG_DATA_DIRS", "/usr/local/share:/usr/share").split(":"):
+        if entry.startswith("/"):
+            roots.append(Path(entry) / "icons")
+    roots.append(Path("/usr/share/pixmaps"))
+    return roots
+
+
+def _icon_index():
+    """Map icon theme names to the first trusted svg/png/xpm on disk."""
+    index = {}
+    for ext in (".svg", ".png", ".xpm"):
+        for root in _icon_roots():
+            if not root.is_absolute() or not root.is_dir():
+                continue
+            try:
+                resolved_root = root.resolve()
+                info = root.lstat()
+                if not stat.S_ISDIR(info.st_mode):
+                    continue
+            except OSError:
+                continue
+            try:
+                paths = root.glob(f"*{ext}") if root.name == "pixmaps" else root.glob(f"**/*{ext}")
+            except OSError:
+                continue
+            for path in paths:
+                if path.stem in index:
+                    continue
+                if root.name != "pixmaps" and "apps" not in path.parts and "devices" not in path.parts:
+                    continue
+                try:
+                    resolved = path.resolve()
+                    if not resolved.is_relative_to(resolved_root) or not resolved.is_file():
+                        continue
+                except OSError:
+                    continue
+                index[path.stem] = str(resolved)
+    return index
 
 
 def _launch_application(argv):
@@ -210,6 +279,38 @@ class DesktopRegistry:
             ]
         self.roots = [Path(p) for p in roots]
         self.aliases = aliases or {}
+
+    def applications(self):
+        """List visible, owner-trusted desktop entries for the UI app picker."""
+        results = []
+        seen = set()
+        icons = _icon_index()
+        for root in self.roots:
+            if not root.is_absolute():
+                continue
+            for path in sorted(root.glob("**/*.desktop")):
+                ident = str(path.relative_to(root)).replace("/", "-")
+                if ident.lower() in seen:
+                    continue
+                seen.add(ident.lower())
+                parser = configparser.ConfigParser(interpolation=None, strict=False)
+                try:
+                    info = path.stat()
+                    if info.st_size > 65536 or info.st_uid not in (0, os.getuid()) or info.st_mode & 0o022:
+                        continue
+                    parser.read(path, encoding="utf-8")
+                    entry = parser["Desktop Entry"]
+                    if (entry.get("Type") != "Application"
+                        or entry.get("Hidden", "false").lower() == "true"
+                        or entry.get("NoDisplay", "false").lower() == "true"
+                        or not (entry.get("Exec") or entry.get("DBusActivatable", "false").lower() == "true")):
+                        continue
+                    name = entry.get("Name", "")
+                    if name and len(name) <= 120:
+                        results.append({"id": ident, "name": name, "icon": _desktop_icon(entry.get("Icon", ""), icons)})
+                except (OSError, UnicodeError, configparser.Error, KeyError):
+                    continue
+        return sorted(results, key=lambda app: (app["name"].lower(), app["id"].lower()))
 
     def resolve(self, name):
         target = self.aliases.get(name, name).lower()

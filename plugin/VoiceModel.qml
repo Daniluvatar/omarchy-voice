@@ -7,6 +7,8 @@ Item {
     property string voiceState: "idle"
     property string message: "Connecting to local voice service…"
     property string confirmationToken: ""
+    property string aliasText: ""
+    property bool aliasRecording: false
     property string providerInfo: "Local faster-whisper; querying capabilities…"
     property bool available: false
     property bool pollingEnabled: true
@@ -16,6 +18,7 @@ Item {
     property bool providersPending: true
     property bool timedOut: false
     signal confirmationRequested()
+    signal aliasHeard(string text)
 
     function fail(text) {
         available = false
@@ -24,21 +27,30 @@ Item {
         confirmationToken = ""
     }
     function acceptStatus(data) {
-        var states = ["idle", "listening", "transcribing", "executing", "confirmation", "error"]
+        var states = ["idle", "listening", "transcribing", "executing", "confirmation", "alias_review", "error"]
         if (!data || states.indexOf(data.state) < 0 || typeof data.message !== "string")
             throw new Error("Invalid status response")
+        if (data.state === "alias_review" && (typeof data.alias_text !== "string" || data.alias_text.length > 512))
+            throw new Error("Invalid alias transcript")
         var token = data.state === "confirmation" && typeof data.confirmation_token === "string" ? data.confirmation_token : ""
         var fresh = token !== "" && token !== confirmationToken
+        var newAlias = data.state === "alias_review" && typeof data.alias_text === "string" &&
+                       (voiceState !== "alias_review" || aliasText !== data.alias_text)
         voiceState = data.state
         message = data.message
         confirmationToken = token
+        aliasText = data.state === "alias_review" && typeof data.alias_text === "string" ? data.alias_text : ""
+        if (data.state !== "listening" && data.state !== "transcribing") aliasRecording = false
         available = true
         if (fresh) confirmationRequested()
+        if (newAlias) aliasHeard(aliasText)
     }
     function action(verb, token) {
-        if (["start", "stop", "cancel", "confirm"].indexOf(verb) < 0 || pendingAction.length > 0) return
+        if (["start", "start-alias", "stop", "cancel", "confirm"].indexOf(verb) < 0 || pendingAction.length > 0) return
         if (verb === "confirm" && (!token || token !== confirmationToken || voiceState !== "confirmation")) return
         pendingAction = verb === "confirm" ? [verb, token] : [verb]
+        if (verb === "start-alias") aliasRecording = true
+        if (verb === "cancel" || verb === "start") aliasRecording = false
         // Remove authorization immediately to prevent duplicate clicks.
         if (verb === "confirm" || verb === "cancel") confirmationToken = ""
         pump()

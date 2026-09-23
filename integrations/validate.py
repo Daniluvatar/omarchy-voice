@@ -22,7 +22,12 @@ with tempfile.TemporaryDirectory(prefix='voice-qml-', dir=os.environ.get('TMPDIR
 import Quickshell
 import "Plugin"
 ShellRoot {
-    VoiceModel { id: model; pollingEnabled: false }
+    VoiceModel {
+        id: model
+        pollingEnabled: false
+        property int heardCount: 0
+        onAliasHeard: function(text) { heardCount++ }
+    }
     Timer { interval: 100; running: true; onTriggered: Qt.quit() }
     Component.onCompleted: {
         var component = Qt.createComponent("Plugin/VoicePanel.qml")
@@ -37,6 +42,15 @@ ShellRoot {
         }
         model.acceptStatus({state: "idle", message: "test"})
         if (model.confirmationToken !== "") throw new Error("stale token")
+        model.acceptStatus({state: "alias_review", message: "review", alias_text: "Open is putty high."})
+        model.acceptStatus({state: "alias_review", message: "review", alias_text: "Open is putty high."})
+        if (model.aliasText !== "Open is putty high." || model.heardCount !== 1)
+            throw new Error("alias text was lost or repeatedly emitted")
+        model.acceptStatus({state: "idle", message: "test"})
+        if (model.aliasText !== "") throw new Error("stale alias text")
+        var invalidAlias = false
+        try { model.acceptStatus({state: "alias_review", message: "bad"}) } catch (e) { invalidAlias = true }
+        if (!invalidAlias) throw new Error("missing alias transcript accepted")
         var rejected = false
         try { model.acceptStatus({state: "invented", message: "bad"}) } catch (e) { rejected = true }
         if (!rejected) throw new Error("invalid state accepted")
