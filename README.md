@@ -171,3 +171,12 @@ Follow the integration guide to replace the manually copied plugin/helper/servic
 ## Documentation policy
 
 README describes the **current** behavior, implementation status and installation/run commands. Every behavior change must update it, replacing stale instructions rather than appending contradictory historical guidance. Original design context belongs in the architecture proposal; decision rationale belongs in ADRs.
+
+## TechDebt
+Dropdown provider
+Dropdown app > action > recording
+
+## Bugs
+open Spotify
+
+Fixed in the supplied service unit: **open terminal → `sudo` failed** with `The "no new privileges" flag is set`. The user service had `NoNewPrivileges=yes`, which the kernel inherits into every launched application. The flag was removed from `integrations/omarchy-voice.service`; see [ADR 0002](docs/adr/0002-launched-app-privileges.md). After updating, reinstall the unit and run `systemctl --user daemon-reload && systemctl --user restart omarchy-voice.service`. Also close **all** windows of a terminal opened before the fix and launch a fresh one: Ghostty uses a single-instance process, so new windows can reuse the old process and keep its inherited flag even after the voice service restarts. Save work first; closing the terminal running this session would end it. Verify the new terminal's `NoNewPrivs` is 0 via `/proc/$$/status` before trying `sudo`.

@@ -10,7 +10,8 @@ Restart=on-failure
 RestartSec=3
 TimeoutStopSec=5
 UMask=0077
-NoNewPrivileges=yes
+# NoNewPrivileges is intentionally not set: it is inherited by every child
+# process, so launched terminals could not use sudo. See docs/adr/0002.
 
 [Install]
 WantedBy=graphical-session.target
