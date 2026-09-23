@@ -16,6 +16,7 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 - Local Faster-Whisper adapter, offline inference after an explicit model download, CPU/int8 defaults; optional CUDA configuration.
 - Replaceable STT contract and injected test provider; no dependency on Voxtype.
 - Deterministic English parsing, installed `.desktop` app discovery and configurable exact aliases.
+- Native-panel enrollment of reviewed spoken app aliases: a bounded recording transcribes without executing, or a phrase can be typed; the user explicitly maps the text to an installed app. No training audio is saved.
 - Strict action/parameter validation, action permissions, expiring single-use nonvoice confirmation for window closing. No arbitrary shell, shutdown or reboot action.
 - Unix-socket daemon with owner-only runtime permissions, bounded requests, duplicate-instance protection, cancellation and killable transcription worker.
 - JSON CLI, dry-run command planning, diagnostics, model download, and `omarchy-voice logs` for the local diagnostic file.
@@ -38,7 +39,7 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open the terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. Observed STT mishears **open a Spotify**, **open and Spotify**, and **open is Spotify** map only to the configured Spotify app. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`, `switch to workspace four`, `move window to the left workspace`) and still use the window focused when you press F5. **Move … left/right** without `workspace` is a monitor move; **… left/right workspace** is a workspace move. Common STT mishears such as **water space** / **world space** and **for** / **forward** for four are normalized. Numbered window labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open the terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you configure a `terminal` desktop alias. Spoken **open browser** / **open brave** / **open brave browser** / **open chromium** map to Brave. Observed STT mishears **open a Spotify**, **open and Spotify**, and **open is Spotify** map only to the configured Spotify app. Other exact app mishearings such as **open is putty high** can be reviewed and mapped to Spotify in the native panel; **open music app** is a more stable user-chosen alias. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`, `switch to workspace four`, `move window to the left workspace`) and still use the window focused when you press F5. **Move … left/right** without `workspace` is a monitor move; **… left/right workspace** is a workspace move. Common STT mishears such as **water space** / **world space** and **for** / **forward** for four are normalized. Numbered window labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
 
 Application launches use validated argv without a shell, detached standard streams and a new process session. The backend watches the launcher for up to 250 ms: missing executables and immediate nonzero exits fail; a still-running launcher is accepted and reaped asynchronously when it exits, without a lifetime timeout or termination. Acceptance is not proof that a window appeared; failures after the startup window are not reported to the UI. This is process-session isolation, not escape from a systemd service cgroup: service shutdown can still affect children that have not been handed off to an application scope. Other desktop actions retain their 10-second command timeout.
 
@@ -74,7 +75,7 @@ Review [examples/config.toml](examples/config.toml) before enabling the daemon. 
 allow = []
 ```
 
-Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration changes require restarting the daemon. `--config PATH` is a global option **before** the subcommand.
+Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation, or use the native panel's **Spoken app alias** section / CLI to save a reviewed text mapping. Panel aliases live separately in `~/.config/omarchy-voice/aliases.json` (respects `XDG_CONFIG_HOME`) and take precedence over duplicate TOML aliases. The panel has three choices: searchable **Application** (from installed desktop entries), **Action** (currently only Open application), and **Voice phrase** (record-and-review or type). For Spotify, select Spotify, leave Open application selected, click **Record alias**, speak, click **Finish alias recording**, review the heard text, and click **Save alias**, then explicitly click **Apply saved aliases** to restart the service. Recording never runs its transcript as a command. Closing an application is not implemented; window closing remains a separate confirmation-gated action, not an alias option. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration or alias changes require restarting the daemon; saving an alias alone does not restart it. `--config PATH` is a global option **before** the subcommand.
 
 ## Run without installing the desktop integration
 
@@ -84,6 +85,9 @@ First inspect commands without changing the desktop:
 omarchy-voice parse 'workspace two'
 omarchy-voice run 'workspace two'             # Dry run: prints validated argv
 omarchy-voice run 'open terminal'             # Dry run: omarchy launch terminal
+omarchy-voice alias set 'open music app' Spotify # Save exact phrase; no app launched
+omarchy-voice alias list
+omarchy-voice alias remove 'music app'           # Undo the alias
 omarchy-voice transcribe /absolute/path/command.wav  # Real local STT, dry-run action
 ```
 
@@ -121,7 +125,7 @@ Execution uses the daemon's configuration. The default for `run` and `transcribe
 
 The widget lives in `plugin/` (not the repository root). Copy that folder, enable it, and put it on the bar. Do not use `omarchy plugin add` on this repository URL.
 
-**F5** is the hold-to-talk binding on this machine (record-style keycap, no Super/Shift). F9 stays Voxtype dictation. Super+S is Toggle scratchpad. Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager. Super+; is restored. Super+Shift+V is not used because releasing Shift first often never fires `stop`. The widget dropdown can display a different preferred shortcut; applying it still requires editing `~/.config/hypr/bindings.lua`. Activation is hold-to-talk only.
+**F5** is the hold-to-talk binding on this machine (record-style keycap, no Super/Shift). F9 stays Voxtype dictation. Super+S is Toggle scratchpad. Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager. Super+; is restored. Super+Shift+V is not used because releasing Shift first often never fires `stop`. The widget dropdown can display a different preferred shortcut; applying it still requires editing `~/.config/hypr/bindings.lua`. Normal activation is hold-to-talk only; alias enrollment uses explicit in-panel record/finish controls and does not execute recognized speech.
 
 On this machine the backend, service, bar widget, and F5 binding are installed from this checkout. Other machines should follow [docs/integration.md](docs/integration.md).
 
@@ -139,22 +143,23 @@ uv build
 
 ### Verification status
 
-- **173 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, narrow Spotify mishear aliases, local diagnostic logging, and focused-window monitor/workspace moves. Launch regressions include immediate failure detection, injected runners, permissions, narrow terminal-article parsing, and a harmless real subprocess that survives beyond 10 seconds and is reaped after exit.
+- **179 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, narrow Spotify mishear aliases, installed-app picker filtering, reviewed alias storage/permissions/no-execution recording, local diagnostic logging, and focused-window monitor/workspace moves. Launch regressions include immediate failure detection, injected runners, permissions, narrow terminal-article parsing, and a harmless real subprocess that survives beyond 10 seconds and is reaped after exit.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
+- The updated backend and plugin are installed locally; the user reports the initial alias panel working. This is user-reported UI feedback, not an automated end-to-end microphone/Spotify acceptance test.
 - “Open the terminal” parses as `app.launch` for `terminal`; its dry-run produces `omarchy launch terminal`. Reinstall and restart the user service after updating the backend. The lifetime regression uses a harmless Python fixture, not a live terminal window.
 - Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
 - Real CLI dry-run for “workspace two” produced `hyprctl dispatch hl.dsp.focus({workspace="2"})` without running it; all doctor dependency checks passed in the development environment.
-- **Not yet verified:** live microphone → spoken supported command → real desktop action; installed widget popup/focus across monitors; physical F5 release ordering; CUDA; long-session stability and latency targets. Automated fixtures are not substitutes for these acceptance checks.
+- **Not yet verified systematically:** live microphone → alias enrollment → spoken alias → real desktop action; installed widget popup/focus across monitors; physical F5 release ordering; CUDA; long-session stability and latency targets. Automated fixtures and initial user feedback are not substitutes for these acceptance checks.
 
 ## Missing / intentionally deferred
 
-- Full live microphone/shortcut acceptance. The bar widget and F5 binding are installed on this machine; popup/focus and hold-to-talk still need a live check.
+- Full measured live microphone/shortcut acceptance. The bar widget and F5 binding are installed on this machine; popup/focus across monitors and hold-to-talk release behavior still need a systematic check.
 - In-panel editable provider/permission/microphone configuration, model-download UI and graphical onboarding.
 - Additional production STT providers, streaming and persistent/shared model service (models currently run in isolated workers).
 - Internationalized command grammars, wake word, always-listening, cloud STT, LLM/Hermes integration, arbitrary shell, power actions and provider marketplace.
 - AUR/distribution packaging, config migrations, broad compatibility and performance benchmarks.
 
-See the [original architecture proposal](docs/architecture.md) and [implementation decisions](docs/adr/0001-mvp-boundaries.md). The proposal describes future goals, not implemented features.
+See the [original architecture proposal](docs/architecture.md) and [implementation decisions](docs/adr/0001-mvp-boundaries.md), including the [spoken-alias decision](docs/adr/0003-user-approved-app-aliases.md). The proposal describes future goals, not implemented features.
 
 ## Update / uninstall
 
@@ -172,11 +177,18 @@ Follow the integration guide to replace the manually copied plugin/helper/servic
 
 README describes the **current** behavior, implementation status and installation/run commands. Every behavior change must update it, replacing stale instructions rather than appending contradictory historical guidance. Original design context belongs in the architecture proposal; decision rationale belongs in ADRs.
 
-## TechDebt
-Dropdown provider
-Dropdown app > action > recording
+## Design and UX backlog
+
+The initial **Application → Action → Voice phrase** controls work in the panel, but this is a functional first pass, not the intended finished design. Priorities to discuss and prototype:
+
+1. **Clearer setup flow:** separate everyday voice status/controls from alias setup and diagnostics. Use compact, numbered steps with a visible selected-app/action summary, rather than one long scrolling panel of instructions and raw capability JSON.
+2. **Recording and review feedback:** show a bounded recording timer and unmistakable listening/transcribing/review states. Present the recognized phrase prominently with **Retry**, **Edit**, and **Save** paths; never execute a training utterance or imply that saving audio retrains the STT model.
+3. **Alias management:** replace the raw JSON list with readable cards showing phrase → action → app, plus edit/remove and a clear pending-vs-applied state. Preserve explicit restart/undo semantics and exact-match validation.
+4. **App picker polish:** show app names/icons and helpful empty/duplicate states, keep search and keyboard navigation usable in the popup, and check layout, focus, contrast, and scrolling on both monitors.
+5. **Provider presentation:** only local faster-whisper exists. Show it as a status/capability summary now; add a real provider selector only when multiple production providers and their configuration paths exist. Do not show a nonfunctional choice.
+6. **Future action design:** the Action picker currently offers only **Open application**. Closing an app is not implemented; define an explicit target and nonvoice confirmation policy before offering it. Do not repurpose the existing focused-window close as silent app termination.
 
 ## Bugs
-Intermittent local transcription failures are distinct from the observed Spotify phrase mishears. `doctor` checks the STT dependency but not model readiness; use `omarchy-voice logs` to diagnose a transcription failure. Spotify launch after live microphone transcription still requires a fresh end-to-end check.
+Intermittent local transcription failures are distinct from the observed Spotify phrase mishears. `doctor` checks the STT dependency but not model readiness; use `omarchy-voice logs` to diagnose a transcription failure. The new alias panel has initial positive user feedback, but Spotify launch after enrollment still needs a documented end-to-end check.
 
 Fixed in the supplied service unit: **open terminal → `sudo` failed** with `The "no new privileges" flag is set`. The user service had `NoNewPrivileges=yes`, which the kernel inherits into every launched application. The flag was removed from `integrations/omarchy-voice.service`; see [ADR 0002](docs/adr/0002-launched-app-privileges.md). After updating, reinstall the unit and run `systemctl --user daemon-reload && systemctl --user restart omarchy-voice.service`. Also close **all** windows of a terminal opened before the fix and launch a fresh one: Ghostty uses a single-instance process, so new windows can reuse the old process and keep its inherited flag even after the voice service restarts. Save work first; closing the terminal running this session would end it. Verify the new terminal's `NoNewPrivs` is 0 via `/proc/$$/status` before trying `sudo`.

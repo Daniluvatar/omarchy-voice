@@ -28,6 +28,13 @@ Panel {
                 return shortcutOptions[i].label
         return shortcutValue.replace("SUPER", "Super").replace("SHIFT", "Shift")
     }
+    property string aliasStatus: ""
+    property string aliasList: ""
+    property var appOptions: []
+    property string appChoice: ""
+    property string actionChoice: "app.launch"
+    property string voiceInputMode: "record"
+    Component.onCompleted: appQuery.running = true
 
     function applyShortcut(value) {
         var entry = { id: root.moduleName }
@@ -45,6 +52,7 @@ Panel {
     VoiceModel {
         id: voice
         onConfirmationRequested: root.open()
+        onAliasHeard: function(text) { phraseField.text = text; root.open() }
     }
     WidgetButton {
         id: button
@@ -59,6 +67,49 @@ Panel {
         id: editor
         // Trusted, shipped helper; neither transcript nor settings become code.
         command: ["omarchy-voice-edit-config"]
+    }
+    Process {
+        id: aliasCommand
+        stdout: StdioCollector { id: aliasOutput }
+        onExited: function(code) {
+            try {
+                var data = JSON.parse(aliasOutput.text)
+                root.aliasStatus = data.message || "Alias request failed"
+                if (code !== 0) return
+                if (data.aliases) root.aliasList = JSON.stringify(data.aliases, null, 2)
+            } catch (e) {
+                root.aliasStatus = "Could not read alias response"
+            }
+        }
+    }
+    Process {
+        id: aliasRestart
+        command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
+        onExited: function(code) {
+            root.aliasStatus = code === 0 ? "Voice service restarted; saved aliases are active" : "Could not restart voice service"
+        }
+    }
+    Process {
+        id: appQuery
+        command: ["omarchy-voice", "apps"]
+        stdout: StdioCollector { id: appOutput }
+        onExited: function(code) {
+            try {
+                var data = JSON.parse(appOutput.text)
+                if (code !== 0 || !Array.isArray(data.apps)) throw new Error("Invalid app list")
+                var options = []
+                for (var i = 0; i < data.apps.length; i++)
+                    options.push({ value: data.apps[i].id, label: data.apps[i].name + " (" + data.apps[i].id + ")" })
+                root.appOptions = options
+            } catch (e) {
+                root.aliasStatus = "Could not list installed applications"
+            }
+        }
+    }
+    function aliasRequest(args) {
+        if (aliasCommand.running) return
+        aliasCommand.command = ["omarchy-voice", "alias"].concat(args)
+        aliasCommand.running = true
     }
     KeyboardPanel {
         id: popup
@@ -164,6 +215,103 @@ Panel {
                         enabled: !voice.busy && voice.available && voice.voiceState !== "idle"
                         onClicked: voice.action("cancel", "")
                     }
+                }
+                Text {
+                    width: parent.width
+                    text: "Spoken app alias · Spotify example"
+                    textFormat: Text.PlainText
+                    color: Color.foreground
+                    font.bold: true
+                }
+                Text {
+                    width: parent.width
+                    text: "Choose an installed app and an available action. Then record or type the phrase you want to use. Recording never runs an action; review what was heard before saving."
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: Color.foreground
+                }
+                SearchableDropdown {
+                    width: parent.width
+                    label: "1 · Application"
+                    value: root.appChoice
+                    options: root.appOptions
+                    triggerLabel: root.appChoice === "" ? "Choose an installed app" : ""
+                    onChanged: function(value) { root.appChoice = value }
+                }
+                Dropdown {
+                    width: parent.width
+                    label: "2 · Action"
+                    value: root.actionChoice
+                    options: [{ value: "app.launch", label: "Open application" }]
+                    onChanged: function(value) { root.actionChoice = value }
+                }
+                Text {
+                    width: parent.width
+                    text: "Only opening an app is supported. Closing an app is not available; closing a window needs separate explicit confirmation."
+                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    color: Color.foreground
+                }
+                Dropdown {
+                    width: parent.width
+                    label: "3 · Voice phrase"
+                    value: root.voiceInputMode
+                    options: [
+                        { value: "record", label: "Record and review a phrase" },
+                        { value: "type", label: "Type a phrase" }
+                    ]
+                    onChanged: function(value) { root.voiceInputMode = value }
+                }
+                Row {
+                    visible: root.voiceInputMode === "record"
+                    spacing: Style.space(8)
+                    Button {
+                        text: "Record alias"
+                        enabled: root.appChoice !== "" && !voice.busy && voice.available &&
+                                 (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
+                        onClicked: voice.action("start-alias", "")
+                    }
+                    Button {
+                        text: "Finish alias recording"
+                        enabled: !voice.busy && voice.voiceState === "listening" && voice.aliasRecording
+                        onClicked: voice.action("stop", "")
+                    }
+                }
+                TextField {
+                    id: phraseField
+                    width: parent.width
+                    placeholderText: "Heard phrase or alias (e.g. open music app) — review before saving"
+                }
+                Row {
+                    spacing: Style.space(8)
+                    Button {
+                        text: "Save alias"
+                        enabled: !aliasCommand.running && phraseField.text.trim() !== "" && root.appChoice !== "" && root.actionChoice === "app.launch"
+                        onClicked: root.aliasRequest(["set", phraseField.text, root.appChoice])
+                    }
+                    Button {
+                        text: "Remove alias"
+                        enabled: !aliasCommand.running && phraseField.text.trim() !== ""
+                        onClicked: root.aliasRequest(["remove", phraseField.text.toLowerCase().replace(/^(open|launch|start)\s+/, "").replace(/[.?!]$/, "")])
+                    }
+                    Button {
+                        text: "Show aliases"
+                        enabled: !aliasCommand.running
+                        onClicked: root.aliasRequest(["list"])
+                    }
+                }
+                Button {
+                    text: "Apply saved aliases (restart voice service)"
+                    enabled: !aliasRestart.running && !aliasCommand.running && !voice.busy &&
+                             (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
+                    onClicked: aliasRestart.running = true
+                }
+                Text {
+                    width: parent.width
+                    text: root.aliasStatus + (root.aliasList ? "\n" + root.aliasList : "") + "\nAfter saving or removing an alias, click Apply to explicitly restart the voice service. This never changes the STT model or runs the recorded phrase."
+                    textFormat: Text.PlainText
+                    wrapMode: Text.WrapAnywhere
+                    color: Color.foreground
                 }
                 Text {
                     width: parent.width

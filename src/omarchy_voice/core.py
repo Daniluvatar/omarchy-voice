@@ -211,6 +211,37 @@ class DesktopRegistry:
         self.roots = [Path(p) for p in roots]
         self.aliases = aliases or {}
 
+    def applications(self):
+        """List visible, owner-trusted desktop entries for the UI app picker."""
+        results = []
+        seen = set()
+        for root in self.roots:
+            if not root.is_absolute():
+                continue
+            for path in sorted(root.glob("**/*.desktop")):
+                ident = str(path.relative_to(root)).replace("/", "-")
+                if ident.lower() in seen:
+                    continue
+                seen.add(ident.lower())
+                parser = configparser.ConfigParser(interpolation=None, strict=False)
+                try:
+                    info = path.stat()
+                    if info.st_size > 65536 or info.st_uid not in (0, os.getuid()) or info.st_mode & 0o022:
+                        continue
+                    parser.read(path, encoding="utf-8")
+                    entry = parser["Desktop Entry"]
+                    if (entry.get("Type") != "Application"
+                        or entry.get("Hidden", "false").lower() == "true"
+                        or entry.get("NoDisplay", "false").lower() == "true"
+                        or not (entry.get("Exec") or entry.get("DBusActivatable", "false").lower() == "true")):
+                        continue
+                    name = entry.get("Name", "")
+                    if name and len(name) <= 120:
+                        results.append({"id": ident, "name": name})
+                except (OSError, UnicodeError, configparser.Error, KeyError):
+                    continue
+        return sorted(results, key=lambda app: (app["name"].lower(), app["id"].lower()))
+
     def resolve(self, name):
         target = self.aliases.get(name, name).lower()
         matches = []

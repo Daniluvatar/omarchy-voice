@@ -114,8 +114,23 @@ Approval is disabled immediately after clicking and when the token disappears.
 Only local **faster-whisper** is implemented. The local badge describes audio
 transcription, not a network firewall: initial model downloads need network
 access, and authorized actions can launch networked apps. The frontend does not
-persist audio or transcripts, and renders backend text as plain text. Inspect
-the backend's retention and permission policy independently.
+persist audio and renders backend text as plain text. Explicitly approved alias
+text is saved in the user configuration; ordinary transcripts remain in the
+local backend diagnostic log. Inspect its retention and permission policy
+independently.
+
+The **Spoken app alias** section has three choices: searchable **Application**
+(installed desktop entry), **Action** (Open application only), and **Voice phrase**
+(record-and-review or type). Select Spotify, press **Record alias**, speak, then
+**Finish alias recording**. Review/edit the heard text before saving. You can
+type a phrase instead of recording. Closing an app is not supported; closing a
+window still requires the distinct confirmation workflow. The audio is deleted; reviewed
+phrase-to-desktop-ID mappings are stored in
+`$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active after an
+explicit service restart via **Apply saved aliases** (or `systemctl --user restart omarchy-voice.service`). **Show aliases** and **Remove alias** manage only the
+panel's mappings, not TOML entries. This is exact matching, not STT model
+training or fuzzy launch. The existing diagnostic log still contains local
+transcriptions.
 
 “Open configuration…” invokes the shipped fixed helper argv. It opens
 `$XDG_CONFIG_HOME/omarchy-voice/config.toml` (default
@@ -143,10 +158,11 @@ timeout_seconds = 15
 allow = []
 ```
 
-v0.1 has **no live configuration API**, model downloader UI, editable provider
-selector, microphone chooser, waveform, or in-panel permissions editor. The
-panel presents these limitations rather than claiming live values it cannot
-read. Save the file, cancel any capture, then run
+v0.1 has **no live configuration API for general settings**, model downloader UI,
+editable provider selector, microphone chooser, waveform, or in-panel
+permissions editor. The panel does have reviewed app-alias enrollment and
+removal; it does not change action permissions. Save the file, cancel any
+capture, then run
 `systemctl --user restart omarchy-voice.service`. Recreate/reload the widget to
 refresh cached provider capabilities if dependencies change.
 
@@ -176,7 +192,10 @@ Live acceptance still requires explicit user testing: install, ensure microphone
 permission and local model availability, hold/release the shortcut, inspect
 listening → transcribing → executing/idle, deny/approve a harmless test request,
 check expiry/error recovery, and verify popup focus/placement on each monitor.
-No live microphone, model inference or disruptive action has been claimed tested.
+For aliases, record a Spotify example without executing, review the heard text,
+save it, click **Apply saved aliases**, then speak the alias and confirm the actual app
+appears. No live alias enrollment, model inference or disruptive action has been
+claimed tested by the automated harness.
 
 ## Update and uninstall
 
