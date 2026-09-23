@@ -20,7 +20,7 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 - Strict action/parameter validation, action permissions, expiring single-use nonvoice confirmation for window closing. No arbitrary shell, shutdown or reboot action.
 - Unix-socket daemon with owner-only runtime permissions, bounded requests, duplicate-instance protection, cancellation and killable transcription worker.
 - JSON CLI, dry-run command planning, diagnostics, model download, and `omarchy-voice logs` for the local diagnostic file.
-- Native Omarchy bar widget/panel: state, controls, local-processing label, provider metadata, confirmation, and in-panel shortcut buttons. Settings do not rewrite Hyprland by themselves.
+- Native Omarchy bar widget/panel: opens on a paginated application grid. Clicking an app shows that app’s commands and alias enrollment below it. Settings is a separate screen from a button next to Start/Stop. Everyday status, hold-to-talk controls and confirmation stay at the top. Settings do not rewrite Hyprland by themselves.
 - Opt-in systemd user service and Lua hold-to-talk bindings; existing F9/Voxtype remains independent.
 
 ### Supported commands
@@ -181,10 +181,10 @@ README describes the **current** behavior, implementation status and installatio
 
 The initial **Application → Action → Voice phrase** controls work in the panel, but this is a functional first pass, not the intended finished design. Priorities to discuss and prototype:
 
-1. **Clearer setup flow:** separate everyday voice status/controls from alias setup and diagnostics. Use compact, numbered steps with a visible selected-app/action summary, rather than one long scrolling panel of instructions and raw capability JSON.
+1. **Clearer setup flow:** the panel opens on the application grid (no Commands / Aliases / Settings tabs). Clicking an app reveals **Commands** and **Aliases** for that app underneath. Settings is reached from a button next to Start/Stop. Remaining polish: denser layout, keyboard navigation, and live command counts from the parser.
 2. **Recording and review feedback:** show a bounded recording timer and unmistakable listening/transcribing/review states. Present the recognized phrase prominently with **Retry**, **Edit**, and **Save** paths; never execute a training utterance or imply that saving audio retrains the STT model.
-3. **Alias management:** replace the raw JSON list with readable cards showing phrase → action → app, plus edit/remove and a clear pending-vs-applied state. Preserve explicit restart/undo semantics and exact-match validation.
-4. **App picker polish:** show app names/icons and helpful empty/duplicate states, keep search and keyboard navigation usable in the popup, and check layout, focus, contrast, and scrolling on both monitors.
+3. **Alias management:** saved aliases now render as phrase → action rows instead of raw JSON. Remaining: inline edit/remove on each row, and a clear pending-vs-applied state. Preserve explicit restart/undo semantics and exact-match validation.
+4. **App picker polish:** the Applications grid and Aliases dropdown share the same trusted `apps` list, including a sanitized `Icon=` field. Remaining: empty/duplicate states, keyboard navigation in the popup, and layout/contrast checks on both monitors.
 5. **Provider presentation:** only local faster-whisper exists. Show it as a status/capability summary now; add a real provider selector only when multiple production providers and their configuration paths exist. Do not show a nonfunctional choice.
 6. **Future action design:** the Action picker currently offers only **Open application**. Closing an app is not implemented; define an explicit target and nonvoice confirmation policy before offering it. Do not repurpose the existing focused-window close as silent app termination.
 

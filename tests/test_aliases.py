@@ -20,7 +20,7 @@ def apps(tmp_path, monkeypatch):
     directory = tmp_path / "data" / "applications"
     directory.mkdir(parents=True)
     (directory / "spotify.desktop").write_text(
-        "[Desktop Entry]\nType=Application\nName=Spotify\nExec=spotify\n"
+        "[Desktop Entry]\nType=Application\nName=Spotify\nIcon=spotify-client\nExec=spotify\n"
     )
     return directory / "spotify.desktop"
 
@@ -60,7 +60,8 @@ def test_alias_validation_and_file_safety(apps, tmp_path):
 
 def test_alias_cli_json_and_no_execution(apps, capsys):
     assert main(["apps"]) == 0
-    assert {"id": "spotify.desktop", "name": "Spotify"} in json.loads(capsys.readouterr().out)["apps"]
+    listed = json.loads(capsys.readouterr().out)["apps"]
+    assert any(app["id"] == "spotify.desktop" and app["name"] == "Spotify" and app.get("icon") for app in listed)
     assert main(["alias", "set", "open music app", "Spotify"]) == 0
     assert json.loads(capsys.readouterr().out)["desktop_id"] == "spotify.desktop"
     assert main(["alias", "list"]) == 0
@@ -71,7 +72,7 @@ def test_alias_cli_json_and_no_execution(apps, capsys):
     assert json.loads(capsys.readouterr().out)["phrase"] == "music app"
 
 
-def test_app_picker_excludes_hidden_and_untrusted_entries(apps):
+def test_app_picker_excludes_hidden_and_untrusted_entries(apps, tmp_path, monkeypatch):
     applications = apps.parent
     (applications / "hidden.desktop").write_text(
         "[Desktop Entry]\nType=Application\nName=Hidden\nExec=hidden\nNoDisplay=true\n"
@@ -80,7 +81,28 @@ def test_app_picker_excludes_hidden_and_untrusted_entries(apps):
     unsafe.write_text("[Desktop Entry]\nType=Application\nName=Unsafe\nExec=unsafe\n")
     unsafe.chmod(0o666)
     result = DesktopRegistry([applications]).applications()
-    assert result == [{"id": "spotify.desktop", "name": "Spotify"}]
+    assert result[0]["id"] == "spotify.desktop"
+    assert result[0]["name"] == "Spotify"
+    assert result[0]["icon"] in ("spotify-client",) or result[0]["icon"].endswith("spotify-client.png")
+    (applications / "plain.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Plain\nExec=plain\n"
+    )
+    (applications / "path.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Path\nIcon=/usr/share/pixmaps/path.png\nExec=path\n"
+    )
+    (applications / "badicon.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Bad\nIcon=file:///tmp/x.png\nExec=bad\n"
+    )
+    icons = tmp_path / "icons" / "hicolor" / "48x48" / "apps"
+    icons.mkdir(parents=True)
+    (icons / "spotify-client.png").write_bytes(b"")
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path))
+    monkeypatch.setenv("XDG_DATA_DIRS", str(tmp_path / "empty"))
+    listed = {app["id"]: app for app in DesktopRegistry([applications]).applications()}
+    assert listed["plain.desktop"]["icon"] == ""
+    assert listed["path.desktop"]["icon"] == "/usr/share/pixmaps/path.png"
+    assert listed["badicon.desktop"]["icon"] == ""
+    assert listed["spotify.desktop"]["icon"] == str(icons / "spotify-client.png")
 
 
 def test_alias_recording_never_executes(tmp_path):
