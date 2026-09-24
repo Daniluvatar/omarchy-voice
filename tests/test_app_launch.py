@@ -74,7 +74,8 @@ def test_app_survives_old_timeout_and_is_reaped(children, tmp_path):
     process = processes[0]
     assert process.returncode is None
     assert os.getsid(process.pid) == process.pid
-    assert calls == [(["omarchy", "launch", "terminal"], {
+    assert calls == [(["systemd-run", "--user", "--scope", "--quiet", "--collect", "--",
+                      "omarchy", "launch", "terminal"], {
         "shell": False, "stdin": subprocess.DEVNULL,
         "stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL,
         "close_fds": True, "start_new_session": True,
@@ -150,5 +151,6 @@ def test_terminal_alias_uses_same_launch_path(children, tmp_path):
     config = Config(aliases={"terminal": "foot.desktop"})
     processes, calls = children("pass")
     Router(config, registry=DesktopRegistry([tmp_path], config.aliases)).execute(parse("open the terminal"))
-    assert calls[0][0] == ["gio", "launch", str(desktop)]
+    assert calls[0][0] == ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--",
+                           "gio", "launch", str(desktop)]
     assert processes[0].returncode == 0

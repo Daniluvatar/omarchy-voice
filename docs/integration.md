@@ -129,8 +129,9 @@ not supported, and closing a window still requires the distinct confirmation
 workflow. The audio is deleted; reviewed phrase-to-desktop-ID mappings are
 stored in `$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active
 after an explicit service restart via **Apply saved phrases** (or
-`systemctl --user restart omarchy-voice.service`). That restart may close apps
-launched by voice; save work first and see issue #4. **Remove phrase** manages
+`systemctl --user restart omarchy-voice.service`). With the app-scope backend
+fix installed, voice-launched apps survived a live restart; see issue #4 for
+verification details. **Remove phrase** manages
 only the panel's mappings, not built-in or TOML entries. This is exact matching,
 not STT model training or fuzzy launch. The existing diagnostic log still
 contains local transcriptions.
