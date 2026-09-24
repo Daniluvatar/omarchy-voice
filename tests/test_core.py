@@ -153,6 +153,42 @@ def test_config(tmp_path):
     assert load_config(p).max_seconds == 4
 
 
+def test_stt_settings_allowlist(tmp_path):
+    from omarchy_voice.config import set_stt, stt_options
+
+    path = tmp_path / "omarchy-voice" / "config.toml"
+    path.parent.mkdir()
+    path.write_text(
+        '[stt]\nprovider="faster-whisper"\nmodel="tiny.en"\ndevice="cpu"\n'
+        'compute_type="int8"\nlanguage="en"\n[audio]\nmax_seconds=4\n'
+        '[permissions]\nallow=["audio.mute"]\n'
+    )
+    snapshot = set_stt("model", "small.en", path=path)
+    assert snapshot["model"] == "small.en"
+    assert snapshot["provider"] == "faster-whisper"
+    loaded = load_config(path)
+    assert loaded.model == "small.en"
+    assert loaded.max_seconds == 4
+    assert tuple(loaded.permissions) == ("audio.mute",)
+    cuda = set_stt("device", "cuda", path=path)
+    assert cuda["device"] == "cuda"
+    assert cuda["compute_type"] == "float16"
+    cpu = set_stt("device", "cpu", path=path)
+    assert cpu["device"] == "cpu"
+    assert cpu["compute_type"] == "int8"
+    options = stt_options(load_config(path))
+    assert [row["value"] for row in options["providers"]] == ["faster-whisper"]
+    assert "faster-whisper" in options["capabilities"]
+    assert {row["value"] for row in options["capabilities"]["faster-whisper"]["model"]} >= {
+        "tiny.en",
+        "base.en",
+        "small.en",
+    }
+    for key, value in (("provider", "whisper.cpp"), ("model", "large-v3"), ("device", "gpu"), ("language", "es")):
+        with pytest.raises(VoiceError):
+            set_stt(key, value, path=path)
+
+
 def test_desktop(tmp_path):
     p = tmp_path / "brave-browser.desktop"
     p.write_text("[Desktop Entry]\nType=Application\nName=Brave\nExec=brave %U\n")

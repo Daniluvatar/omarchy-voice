@@ -154,3 +154,30 @@ def test_alias_ipc_parameters_rejected(tmp_path):
     with pytest.raises(VoiceError, match="Unknown command"):
         dispatch(controller, {"command": "start_alias", "application": "spotify"})
     controller.close()
+
+
+def test_keybind_osd_defaults_on_and_toggles(apps, tmp_path):
+    from omarchy_voice.aliases import read_settings, set_keybind_osd
+
+    assert read_settings() == {"keybind_osd": True}
+    assert set_keybind_osd(False) is False
+    assert read_settings() == {"keybind_osd": False}
+    assert set_keybind_osd(True) is True
+    path = tmp_path / "config" / "omarchy-voice" / "settings.json"
+    assert path.stat().st_mode & 0o777 == 0o600
+
+
+def test_stt_settings_cli_writes_config(apps, tmp_path, capsys):
+    assert main(["settings", "show"]) == 0
+    shown = json.loads(capsys.readouterr().out)
+    assert shown["stt"]["provider"] == "faster-whisper"
+    assert shown["stt"]["model"] == "tiny.en"
+    assert [row["value"] for row in shown["stt_options"]["providers"]] == ["faster-whisper"]
+    assert main(["settings", "stt", "model", "base.en"]) == 0
+    saved = json.loads(capsys.readouterr().out)
+    assert saved["stt"]["model"] == "base.en"
+    assert "restart voice service" in saved["message"]
+    config_path = tmp_path / "config" / "omarchy-voice" / "config.toml"
+    assert 'model = "base.en"' in config_path.read_text()
+    assert main(["settings", "stt", "provider", "whisper.cpp"]) == 1
+    assert "Unsupported STT provider" in capsys.readouterr().out

@@ -110,3 +110,46 @@ def remove_alias(phrase):
     del aliases[key]
     _save(aliases)
     return key
+
+
+def _settings_path():
+    return _directory() / "settings.json"
+
+
+def read_settings():
+    path = _settings_path()
+    try:
+        info = path.lstat()
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_mode & 0o077 or info.st_size > 1024:
+            raise VoiceError("Unsafe settings file")
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {"keybind_osd": True}
+    except (OSError, UnicodeError, ValueError, RecursionError) as exc:
+        raise VoiceError("Cannot read settings") from exc
+    if type(data) is not dict or set(data) - {"keybind_osd"} or type(data.get("keybind_osd", True)) is not bool:
+        raise VoiceError("Invalid settings")
+    return {"keybind_osd": data.get("keybind_osd", True)}
+
+
+def set_keybind_osd(enabled):
+    if type(enabled) is not bool:
+        raise VoiceError("Invalid settings")
+    settings = read_settings()
+    settings["keybind_osd"] = enabled
+    directory = _directory()
+    temporary = None
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", dir=directory, prefix=".settings-", delete=False) as handle:
+            temporary = Path(handle.name)
+            os.fchmod(handle.fileno(), 0o600)
+            json.dump(settings, handle, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, directory / "settings.json")
+    except OSError as exc:
+        raise VoiceError("Cannot save settings") from exc
+    finally:
+        if temporary is not None:
+            temporary.unlink(missing_ok=True)
+    return enabled

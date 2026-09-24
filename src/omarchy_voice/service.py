@@ -12,7 +12,9 @@ import subprocess
 import threading
 import time
 from .audio import PipeWireRecorder
+from .aliases import read_settings
 from .core import VoiceError, Router, parse
+from .feedback import show_osd
 from .log import write_log
 from .providers import IsolatedSTT
 
@@ -237,6 +239,10 @@ class Controller:
             return
         with self.lock:
             self._set("idle", "Command completed")
+        try:
+            show_osd(intent, enabled=read_settings().get("keybind_osd", True))
+        except Exception:
+            pass
         if self.config.notifications:
             try:
                 subprocess.run(
