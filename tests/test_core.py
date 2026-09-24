@@ -20,9 +20,6 @@ from omarchy_voice.service import Controller, runtime_dir
         ("open terminator", "app.launch", {"application": "terminal"}),
         ("open ghostty", "app.launch", {"application": "terminal"}),
         ("start Spotify", "app.launch", {"application": "spotify"}),
-        ("open a Spotify", "app.launch", {"application": "spotify"}),
-        ("open and Spotify", "app.launch", {"application": "spotify"}),
-        ("open is Spotify", "app.launch", {"application": "spotify"}),
         ("close window", "window.close", {}),
         ("workspace ten", "workspace.switch", {"number": 10}),
         ("workspace 1", "workspace.switch", {"number": 1}),
@@ -120,14 +117,20 @@ def test_open_terminal_uses_omarchy_default():
         aliased.plan(parse("open terminal"))
 
 @pytest.mark.parametrize("text", ["open a Spotify", "open and Spotify", "open is Spotify"])
-def test_spotify_mishears_resolve_only_the_configured_app(text, tmp_path):
+def test_spotify_mishears_need_explicit_alias(text, tmp_path):
     desktop = tmp_path / "spotify.desktop"
     desktop.write_text("[Desktop Entry]\nType=Application\nName=Spotify\nExec=spotify\n")
     router = Router(
         Config(), registry=DesktopRegistry([tmp_path], {"spotify": "spotify.desktop"}),
         runner=lambda *a, **k: pytest.fail("executed"),
     )
-    assert router.plan(parse(text)) == ["gio", "launch", str(desktop)]
+    with pytest.raises(VoiceError, match="unavailable or ambiguous"):
+        router.plan(parse(text))
+    configured = Router(
+        Config(), registry=DesktopRegistry([tmp_path], {parse(text).parameters["application"]: "spotify.desktop"}),
+        runner=lambda *a, **k: pytest.fail("executed"),
+    )
+    assert configured.plan(parse(text)) == ["gio", "launch", str(desktop)]
     with pytest.raises(VoiceError, match="unavailable or ambiguous"):
         router.plan(parse("open and spotify then mute"))
 

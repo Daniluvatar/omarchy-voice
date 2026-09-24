@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from omarchy_voice.aliases import read_aliases, remove_alias, set_alias
+from omarchy_voice.aliases import read_aliases, remove_alias, set_alias, update_alias
 from omarchy_voice.cli import main
 from omarchy_voice.config import Config, load_config
 from omarchy_voice.core import DesktopRegistry, Router, VoiceError, parse
@@ -75,6 +75,31 @@ def test_alias_cli_json_and_no_execution(apps, capsys):
     assert main(["alias", "remove", "music app"]) == 0
     assert json.loads(capsys.readouterr().out)["phrase"] == "music app"
 
+
+def test_update_alias_replaces_phrase_atomically(apps, capsys):
+    config = load_config()
+    set_alias("open music app", "Spotify", config)
+    set_alias("open spotify", "Spotify", config)
+    assert main(["alias", "update", "music app", "open favorite music", "spotify.desktop"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["phrase"] == "favorite music"
+    assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
+    assert Router(load_config()).plan(parse("open favorite music")) == ["gio", "launch", str(apps)]
+    with pytest.raises(VoiceError, match="unavailable or ambiguous"):
+        Router(load_config()).plan(parse("open music app"))
+    for old, new in (("favorite music", "spotify"), ("missing", "another"),
+                     ("favorite music", "open music app; mute")):
+        with pytest.raises(VoiceError):
+            update_alias(old, new, "spotify.desktop", load_config())
+        assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
+
+
+def test_update_alias_keeps_old_phrase_when_target_is_invalid(apps):
+    set_alias("music app", "Spotify", load_config())
+    with pytest.raises(VoiceError):
+        update_alias("music app", "new music", "missing.desktop", load_config())
+    assert read_aliases() == {"music app": "spotify.desktop"}
+
 def test_app_command_catalog_only_lists_valid_routes(apps, capsys):
     (apps.parent / "brave-browser.desktop").write_text(
         "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave\n"
@@ -87,6 +112,9 @@ def test_app_command_catalog_only_lists_valid_routes(apps, capsys):
     assert "open browser" in listed["brave-browser.desktop"]
     assert "open brave" in listed["brave-browser.desktop"]
     assert "open spotify" in listed["spotify.desktop"]
+    assert "open a spotify" not in listed["spotify.desktop"]
+    assert "open and spotify" not in listed["spotify.desktop"]
+    assert "open is spotify" not in listed["spotify.desktop"]
     assert listed["plain.desktop"] == []
     assert len(listed["brave-browser.desktop"]) == len(set(listed["brave-browser.desktop"]))
 

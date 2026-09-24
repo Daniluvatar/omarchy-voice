@@ -41,6 +41,8 @@ Panel {
     readonly property int appPageSize: 8
     property string appChoice: ""
     property bool addingCommand: false
+    property string editingPhrase: ""
+    property string pendingRemovePhrase: ""
     property string voiceInputMode: "record"
     property bool showSettings: false
     property bool keybindOsd: true
@@ -110,7 +112,11 @@ Panel {
                 continue
             for (var j = 0; j < appCatalog[i].commands.length; j++) {
                 var phrase = appCatalog[i].commands[j]
-                commands.push({ phrase: phrase, action: "Open " + selectedAppName })
+                var savedKey = ""
+                for (var s = 0; s < selectedAppAliases.length; s++)
+                    if (phrase === "open " + selectedAppAliases[s].phrase)
+                        savedKey = selectedAppAliases[s].phrase
+                commands.push({ phrase: phrase, action: "Open " + selectedAppName, savedKey: savedKey })
                 seen[phrase] = true
             }
             break
@@ -118,7 +124,7 @@ Panel {
         for (var k = 0; k < selectedAppAliases.length; k++) {
             var saved = "open " + selectedAppAliases[k].phrase
             if (!seen[saved])
-                commands.push({ phrase: saved, action: "Open " + selectedAppName })
+                commands.push({ phrase: saved, action: "Saved mapping (not currently routed here)", savedKey: selectedAppAliases[k].phrase })
         }
         return commands
     }
@@ -246,6 +252,8 @@ Panel {
         if (!app || !app.id) return
         root.appChoice = app.id
         root.addingCommand = false
+        root.editingPhrase = ""
+        root.pendingRemovePhrase = ""
         phraseField.text = ""
         root.aliasStatus = ""
         root.showSettings = false
@@ -325,6 +333,8 @@ Panel {
                     if (!appQuery.running) appQuery.running = true
                 } else if (aliasCommand.command.indexOf("list") < 0) {
                     root.addingCommand = false
+                    root.editingPhrase = ""
+                    root.pendingRemovePhrase = ""
                     Qt.callLater(function() { root.aliasRequest(["list"]) })
                 }
             } catch (e) {
@@ -607,6 +617,15 @@ Panel {
                         }
                         Text {
                             width: parent.width
+                            text: "Default phrases are fixed; use the icons to edit or remove saved phrases."
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: root.panelDim
+                            font.family: root.panelFont
+                            font.pixelSize: Style.font.caption
+                        }
+                        Text {
+                            width: parent.width
                             visible: root.selectedAppCommands.length === 0
                             text: "No voice commands configured for this app yet."
                             textFormat: Text.PlainText
@@ -615,17 +634,63 @@ Panel {
                         }
                         Repeater {
                             model: root.selectedAppCommands
-                            CommandRow {
+                            Column {
                                 required property var modelData
                                 width: parent.width
-                                phrase: modelData.phrase
-                                action: modelData.action
+                                spacing: Style.space(4)
+                                Row {
+                                    width: parent.width
+                                    spacing: Style.space(8)
+                                    CommandRow {
+                                        width: modelData.savedKey ? parent.width - editButton.width - removeButton.width - 2 * parent.spacing : parent.width
+                                        phrase: modelData.phrase
+                                        action: modelData.action
+                                    }
+                                    Button {
+                                        id: editButton
+                                        visible: modelData.savedKey !== ""
+                                        width: Style.space(32)
+                                        text: root.pendingRemovePhrase === modelData.savedKey ? "↶" : "✎"
+                                        tooltipText: root.pendingRemovePhrase === modelData.savedKey ? "Cancel removal" : "Update saved phrase"
+                                        Accessible.name: tooltipText
+                                        enabled: !aliasCommand.running && modelData.savedKey !== ""
+                                        onClicked: {
+                                            if (root.pendingRemovePhrase === modelData.savedKey) {
+                                                root.pendingRemovePhrase = ""
+                                                return
+                                            }
+                                            root.editingPhrase = modelData.savedKey
+                                            root.addingCommand = true
+                                            root.voiceInputMode = "type"
+                                            phraseField.text = modelData.phrase
+                                        }
+                                    }
+                                    Button {
+                                        id: removeButton
+                                        visible: modelData.savedKey !== ""
+                                        width: Style.space(32)
+                                        text: root.pendingRemovePhrase === modelData.savedKey ? "✓" : "×"
+                                        tooltipText: root.pendingRemovePhrase === modelData.savedKey ? "Confirm removal" : "Remove saved phrase"
+                                        Accessible.name: tooltipText
+                                        enabled: !aliasCommand.running && modelData.savedKey !== ""
+                                        onClicked: {
+                                            if (root.pendingRemovePhrase === modelData.savedKey) {
+                                                root.aliasRequest(["remove", modelData.savedKey])
+                                                root.pendingRemovePhrase = ""
+                                            } else {
+                                                root.pendingRemovePhrase = modelData.savedKey
+                                            }
+                                        }
+                                    }
+                                }
                             }
                         }
                         Button {
-                            text: root.addingCommand ? "Cancel new command" : "New command"
+                            text: root.addingCommand ? "Cancel " + (root.editingPhrase ? "update" : "new command") : "New command"
                             onClicked: {
-                                root.addingCommand = !root.addingCommand
+                                root.addingCommand = root.editingPhrase ? false : !root.addingCommand
+                                root.editingPhrase = ""
+                                root.pendingRemovePhrase = ""
                                 phraseField.text = ""
                             }
                         }
@@ -635,7 +700,7 @@ Panel {
                             visible: root.addingCommand
                             Text {
                                 width: parent.width
-                                text: "Action: Open application. Record or type a phrase to open " + root.selectedAppName + ". Recording never runs an action; review what was heard before saving."
+                                text: root.editingPhrase ? "Update the saved phrase for " + root.selectedAppName + ". Built-in/configured phrases cannot be changed here." : "Action: Open application. Record or type a phrase to open " + root.selectedAppName + ". Recording never runs an action; review what was heard before saving."
                                 textFormat: Text.PlainText
                                 wrapMode: Text.Wrap
                                 color: root.panelDim
@@ -656,13 +721,17 @@ Panel {
                                 visible: root.voiceInputMode === "record"
                                 spacing: Style.space(8)
                                 Button {
-                                    text: "Record phrase"
+                                    iconText: "●"
+                                    tooltipText: "Record phrase (does not run the command)"
+                                    Accessible.name: tooltipText
                                     enabled: root.appChoice !== "" && !voice.busy && voice.available &&
                                              (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
                                     onClicked: voice.action("start-alias", "")
                                 }
                                 Button {
-                                    text: "Finish recording"
+                                    iconText: "■"
+                                    tooltipText: "Finish recording and review what was heard"
+                                    Accessible.name: tooltipText
                                     enabled: !voice.busy && voice.voiceState === "listening" && voice.aliasRecording
                                     onClicked: voice.action("stop", "")
                                 }
@@ -675,32 +744,29 @@ Panel {
                             Row {
                                 spacing: Style.space(8)
                                 Button {
-                                    text: "Save phrase"
+                                    iconText: "✓"
+                                    tooltipText: root.editingPhrase ? "Save updated phrase; Apply to activate" : "Save phrase; Apply to activate"
+                                    Accessible.name: tooltipText
                                     enabled: !aliasCommand.running && phraseField.text.trim() !== "" && root.appChoice !== ""
-                                    onClicked: root.aliasRequest(["set", phraseField.text, root.appChoice])
-                                }
-                                Button {
-                                    text: "Remove phrase"
-                                    enabled: !aliasCommand.running && phraseField.text.trim() !== ""
-                                    onClicked: root.aliasRequest(["remove", phraseField.text.toLowerCase().replace(/^(open|launch|start)\s+/, "").replace(/[.?!]$/, "")])
+                                    onClicked: root.aliasRequest(root.editingPhrase ? ["update", root.editingPhrase, phraseField.text, root.appChoice] : ["set", phraseField.text, root.appChoice])
                                 }
                             }
-                            Button {
-                                text: "Apply saved phrases (restart voice service)"
-                                enabled: !aliasRestart.running && !aliasCommand.running && !voice.busy &&
-                                         (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
-                                onClicked: aliasRestart.running = true
-                            }
-                            Text {
-                                width: parent.width
-                                visible: root.aliasStatus !== ""
-                                text: root.aliasStatus + "\nAfter saving or removing a phrase, click Apply to explicitly restart the voice service. This never changes the STT model or runs the recorded phrase."
-                                textFormat: Text.PlainText
-                                wrapMode: Text.WrapAnywhere
-                                color: root.panelForeground
-                                font.family: root.panelFont
-                                font.pixelSize: Style.font.caption
-                            }
+                        }
+                        Button {
+                            text: "Apply saved phrases (restart voice service)"
+                            enabled: !aliasRestart.running && !aliasCommand.running && !voice.busy &&
+                                     (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
+                            onClicked: aliasRestart.running = true
+                        }
+                        Text {
+                            width: parent.width
+                            visible: root.aliasStatus !== ""
+                            text: root.aliasStatus + "\nAfter saving, updating, or removing a phrase, click Apply to explicitly restart the voice service. This never changes the STT model or runs the recorded phrase."
+                            textFormat: Text.PlainText
+                            wrapMode: Text.WrapAnywhere
+                            color: root.panelForeground
+                            font.family: root.panelFont
+                            font.pixelSize: Style.font.caption
                         }
                     }
                     }

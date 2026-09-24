@@ -74,8 +74,8 @@ def _save(aliases):
             temporary.unlink(missing_ok=True)
 
 
-def set_alias(phrase, application, config):
-    if type(phrase) is not str or type(application) is not str or len(phrase) > 128:
+def _alias_key(phrase):
+    if type(phrase) is not str or len(phrase) > 128:
         raise VoiceError("Invalid alias")
     phrase = " ".join(phrase.lower().strip().split())
     intent = parse(phrase if phrase.startswith(("open ", "launch ", "start ")) else "open " + phrase)
@@ -84,6 +84,12 @@ def set_alias(phrase, application, config):
     key = intent.parameters["application"]
     if not APP.fullmatch(key) or ".." in key:
         raise VoiceError("Invalid alias")
+    return key
+
+
+def _desktop_id(application, config):
+    if type(application) is not str:
+        raise VoiceError("Invalid application")
     registry = DesktopRegistry(aliases=config.aliases)
     path = registry.resolve(application.lower().strip())
     desktop_id = next(
@@ -92,12 +98,34 @@ def set_alias(phrase, application, config):
     )
     if not desktop_id or not DESKTOP_ID.fullmatch(desktop_id):
         raise VoiceError("Invalid application")
+    return desktop_id
+
+
+def set_alias(phrase, application, config):
+    key = _alias_key(phrase)
+    desktop_id = _desktop_id(application, config)
     aliases = read_aliases()
     if key not in aliases and len(aliases) >= MAX_ALIASES:
         raise VoiceError("Too many aliases")
     aliases[key] = desktop_id
     _save(aliases)
     return key, desktop_id
+
+
+def update_alias(old_phrase, new_phrase, application, config):
+    """Replace one saved mapping atomically without overwriting another phrase."""
+    old_key = " ".join(old_phrase.lower().strip().split()) if type(old_phrase) is str else ""
+    aliases = read_aliases()
+    if old_key not in aliases:
+        raise VoiceError("Alias not found")
+    new_key = _alias_key(new_phrase)
+    if new_key != old_key and new_key in aliases:
+        raise VoiceError("Alias already exists")
+    desktop_id = _desktop_id(application, config)
+    del aliases[old_key]
+    aliases[new_key] = desktop_id
+    _save(aliases)
+    return new_key, desktop_id
 
 
 def remove_alias(phrase):

@@ -122,8 +122,8 @@ independently.
 Select an installed app to see **Voice commands → Current configured commands**:
 built-in/configured `open …` routes that actually resolve to that app and saved
 panel phrases. Click **New command** to reveal the **Voice phrase** choice
-(record-and-review or type). For Spotify, press **Record phrase**, speak, then
-**Finish recording**. Review/edit the heard text before **Save phrase**, or type
+(record-and-review or type). For Spotify, press **●** to record, speak, then
+**■** to finish. Review/edit the heard text before **✓** to save, or type
 a phrase instead. The only app action is **Open application**; closing an app is
 not supported, and closing a window still requires the distinct confirmation
 workflow. The audio is deleted; reviewed phrase-to-desktop-ID mappings are
@@ -131,8 +131,8 @@ stored in `$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active
 after an explicit service restart via **Apply saved phrases** (or
 `systemctl --user restart omarchy-voice.service`). With the app-scope backend
 fix installed, voice-launched apps survived a live restart; see issue #4 for
-verification details. **Remove phrase** manages
-only the panel's mappings, not built-in or TOML entries. This is exact matching,
+verification details. Each saved command has a pencil (✎) on the right to edit/record a replacement phrase (stored atomically, without overwriting a different saved phrase), and a remove (×) icon that switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML alias, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
+only the panel's mappings. This is exact matching,
 not STT model training or fuzzy launch. The existing diagnostic log still
 contains local transcriptions.
 

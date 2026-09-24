@@ -9,7 +9,7 @@ import signal
 import sys
 import threading
 import wave
-from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd
+from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd, update_alias
 from .config import load_config, set_stt, stt_options, stt_snapshot
 from .core import APP_ALIASES, DesktopRegistry, VoiceError, Router, parse
 from .log import log_path
@@ -51,6 +51,10 @@ def parser():
     add = alias_commands.add_parser("set")
     add.add_argument("phrase")
     add.add_argument("application")
+    update = alias_commands.add_parser("update")
+    update.add_argument("old_phrase")
+    update.add_argument("new_phrase")
+    update.add_argument("application")
     remove = alias_commands.add_parser("remove")
     remove.add_argument("phrase")
     settings = sub.add_parser("settings")
@@ -142,6 +146,9 @@ def main(argv=None):
             elif args.alias_command == "set":
                 phrase, desktop_id = set_alias(args.phrase, args.application, config)
                 result = {"state": "idle", "message": "Alias saved; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
+            elif args.alias_command == "update":
+                phrase, desktop_id = update_alias(args.old_phrase, args.new_phrase, args.application, config)
+                result = {"state": "idle", "message": "Alias updated; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
             else:
                 phrase = remove_alias(args.phrase)
                 result = {"state": "idle", "message": "Alias removed; restart voice service to apply", "phrase": phrase}
