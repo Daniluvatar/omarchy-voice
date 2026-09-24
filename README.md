@@ -20,7 +20,8 @@ Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
 - Strict action/parameter validation, action permissions, expiring single-use nonvoice confirmation for window closing. No arbitrary shell, shutdown or reboot action.
 - Unix-socket daemon with owner-only runtime permissions, bounded requests, duplicate-instance protection, cancellation and killable transcription worker.
 - JSON CLI, dry-run command planning, diagnostics, model download, and `omarchy-voice logs` for the local diagnostic file.
-- Native Omarchy bar widget/panel: opens on a paginated application grid. Clicking an app shows that app’s commands and alias enrollment below it. Settings is a separate screen from a button next to Start/Stop. Everyday status, hold-to-talk controls and confirmation stay at the top. Settings do not rewrite Hyprland by themselves.
+- Native Omarchy bar widget/panel: opens on a paginated application grid. **Applications** and **Desktop** are separate catalogs. Desktop lists real window/workspace/system phrases (close, monitor move, workspace switch/move, mute, lock) — not Super+K swap-window chords, which voice does not run. Clicking an app shows alias enrollment underneath, plus **Commands** only when that app already has enrolled spoken aliases. Settings is a separate screen from a button next to Start/Stop. Settings **Provider** is a dropdown (v0.1: faster-whisper only); Model, Device and Language appear from that provider’s capabilities. Saving STT writes `config.toml` and needs an explicit service restart.
+- After a successful spoken action that has a Super+K chord, show the same bottom-center Omarchy OSD used when launching an app, with **only the keybinding** (`SUPER + RETURN`, `SUPER + 4` for workspace switch, `SUPER SHIFT + 4` for move-window-to-workspace). Settings includes a **Show keybinding** toggle (on by default); turning it off skips the overlay immediately. Chords are refreshed from `omarchy menu keybindings --print`. Actions without a chord, or relative “next/left workspace” moves, show no OSD.
 - Opt-in systemd user service and Lua hold-to-talk bindings; existing F9/Voxtype remains independent.
 
 ### Supported commands
@@ -75,7 +76,7 @@ Review [examples/config.toml](examples/config.toml) before enabling the daemon. 
 allow = []
 ```
 
-Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation, or use the native panel's **Spoken app alias** section / CLI to save a reviewed text mapping. Panel aliases live separately in `~/.config/omarchy-voice/aliases.json` (respects `XDG_CONFIG_HOME`) and take precedence over duplicate TOML aliases. The panel has three choices: searchable **Application** (from installed desktop entries), **Action** (currently only Open application), and **Voice phrase** (record-and-review or type). For Spotify, select Spotify, leave Open application selected, click **Record alias**, speak, click **Finish alias recording**, review the heard text, and click **Save alias**, then explicitly click **Apply saved aliases** to restart the service. Recording never runs its transcript as a command. Closing an application is not implemented; window closing remains a separate confirmation-gated action, not an alias option. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Configuration or alias changes require restarting the daemon; saving an alias alone does not restart it. `--config PATH` is a global option **before** the subcommand.
+Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App aliases must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.aliases]` to match your installation, or use the native panel's **Spoken app alias** section / CLI to save a reviewed text mapping. Panel aliases live separately in `~/.config/omarchy-voice/aliases.json` (respects `XDG_CONFIG_HOME`) and take precedence over duplicate TOML aliases. The panel has three choices: searchable **Application** (from installed desktop entries), **Action** (currently only Open application), and **Voice phrase** (record-and-review or type). For Spotify, select Spotify, leave Open application selected, click **Record alias**, speak, click **Finish alias recording**, review the heard text, and click **Save alias**, then explicitly click **Apply saved aliases** to restart the service. Recording never runs its transcript as a command. Closing an application is not implemented; window closing remains a separate confirmation-gated action, not an alias option. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Panel Settings can set **Provider** (faster-whisper only), **Model**, **Device** and **Language** through `omarchy-voice settings stt`; that writes `[stt]` in `config.toml` and needs an explicit **Apply STT** / service restart. Other keys (permissions, capture limits) still need the TOML editor. Configuration or alias changes require restarting the daemon; saving an alias or STT setting alone does not restart it. `--config PATH` is a global option **before** the subcommand.
 
 ## Run without installing the desktop integration
 
@@ -143,7 +144,7 @@ uv build
 
 ### Verification status
 
-- **179 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, narrow Spotify mishear aliases, installed-app picker filtering, reviewed alias storage/permissions/no-execution recording, local diagnostic logging, and focused-window monitor/workspace moves. Launch regressions include immediate failure detection, injected runners, permissions, narrow terminal-article parsing, and a harmless real subprocess that survives beyond 10 seconds and is reaped after exit.
+- **189 automated tests passed**, covering backend unit/security/daemon integration, STT punctuation, default-terminal launch, narrow Spotify mishear aliases, installed-app picker filtering, reviewed alias storage/permissions/no-execution recording, local diagnostic logging, focused-window monitor/workspace moves, chord-only keybind OSD, the Settings keybind toggle, Desktop catalog phrases, and bounded STT settings writes. Launch regressions include immediate failure detection, injected runners, permissions, narrow terminal-article parsing, and a harmless real subprocess that survives beyond 10 seconds and is reaped after exit.
 - Native manifest/Lua/QML harness executed successfully against this machine's installed shell.
 - The updated backend and plugin are installed locally; the user reports the initial alias panel working. This is user-reported UI feedback, not an automated end-to-end microphone/Spotify acceptance test.
 - “Open the terminal” parses as `app.launch` for `terminal`; its dry-run produces `omarchy launch terminal`. Reinstall and restart the user service after updating the backend. The lifetime regression uses a harmless Python fixture, not a live terminal window.
@@ -154,12 +155,39 @@ uv build
 ## Missing / intentionally deferred
 
 - Full measured live microphone/shortcut acceptance. The bar widget and F5 binding are installed on this machine; popup/focus across monitors and hold-to-talk release behavior still need a systematic check.
-- In-panel editable provider/permission/microphone configuration, model-download UI and graphical onboarding.
-- Additional production STT providers, streaming and persistent/shared model service (models currently run in isolated workers).
+- In-panel permission/microphone configuration, model-download UI and graphical onboarding. Provider/model/device/language are now in Settings; remaining keys still live in `config.toml`.
+- Additional production STT providers (see [Speech providers](#speech-providers)), streaming and persistent/shared model service (models currently run in isolated workers).
 - Internationalized command grammars, wake word, always-listening, cloud STT, LLM/Hermes integration, arbitrary shell, power actions and provider marketplace.
 - AUR/distribution packaging, config migrations, broad compatibility and performance benchmarks.
 
 See the [original architecture proposal](docs/architecture.md) and [implementation decisions](docs/adr/0001-mvp-boundaries.md), including the [spoken-alias decision](docs/adr/0003-user-approved-app-aliases.md). The proposal describes future goals, not implemented features.
+
+## Speech providers
+
+v0.1 ships **one** production STT: local **faster-whisper**. Settings has a **Provider** dropdown plus capability dropdowns for that provider. There is no whisper.cpp, Voxtype, Parakeet, or cloud row.
+
+| Setting | Current values | Notes |
+| --- | --- | --- |
+| Provider | `faster-whisper` | Only allowlisted name; anything else is rejected |
+| Model | `tiny.en` (default), `base.en`, `small.en` | Larger models need `omarchy-voice download-model` first |
+| Device | `cpu` (default); `cuda` if `/dev/nvidia0` exists | CPU uses `int8`; CUDA uses `float16` |
+| Language | `en` | The command parser is English-only |
+
+Hold F5 still records a WAV, then a **spawned worker** loads the model (`local_files_only=True`) and returns text to the deterministic parser. Voxtype (F9) stays a separate dictation app.
+
+Panel writes go through `omarchy-voice settings stt <key> <value>` into `~/.config/omarchy-voice/config.toml`. The running daemon does **not** reload STT until **Apply STT** / `systemctl --user restart omarchy-voice.service`. CLI: `omarchy-voice settings show`.
+
+### Adding another provider
+
+Do not add a Settings row until that provider can actually transcribe. Concrete steps:
+
+1. Implement the existing `STTProvider` contract in `src/omarchy_voice/providers.py`: `available()`, `capabilities()`, `transcribe(audio, language)` on a WAV file. Keep optional imports lazy.
+2. Register the name on `STT_PROVIDERS` in `config.py`. Unknown `provider =` values must still fail closed.
+3. Advertise Settings options from `stt_options()`: `providers` plus `capabilities[name]` arrays for that engine (`model` / `device` / `language`, or none). Empty arrays hide those dropdowns.
+4. Route `IsolatedSTT` / `download_model` / `omarchy-voice providers` by `config.provider`. Add an optional extra in `pyproject.toml` instead of a required dependency.
+5. Tests: unknown provider rejected; capability JSON matches the UI; a fake/unavailable provider is not listed as selectable.
+
+Keep audio local unless the user explicitly opts into a networked engine. Do not merge Voxtype into this dropdown (F9 dictation stays independent). Do not send transcripts to an LLM for intent.
 
 ## Update / uninstall
 
@@ -181,11 +209,11 @@ README describes the **current** behavior, implementation status and installatio
 
 The initial **Application → Action → Voice phrase** controls work in the panel, but this is a functional first pass, not the intended finished design. Priorities to discuss and prototype:
 
-1. **Clearer setup flow:** the panel opens on the application grid (no Commands / Aliases / Settings tabs). Clicking an app reveals **Commands** and **Aliases** for that app underneath. Settings is reached from a button next to Start/Stop. Remaining polish: denser layout, keyboard navigation, and live command counts from the parser.
+1. **Clearer setup flow:** the panel opens on the application grid (no Commands / Aliases / Settings tabs). Clicking an app reveals **Aliases** for enrollment. **Commands** only lists enrolled spoken aliases for that app — it does not invent `Open <Name>` for unconfigured apps. Settings is reached from a button next to Start/Stop. Remaining polish: denser layout and keyboard navigation.
 2. **Recording and review feedback:** show a bounded recording timer and unmistakable listening/transcribing/review states. Present the recognized phrase prominently with **Retry**, **Edit**, and **Save** paths; never execute a training utterance or imply that saving audio retrains the STT model.
 3. **Alias management:** saved aliases now render as phrase → action rows instead of raw JSON. Remaining: inline edit/remove on each row, and a clear pending-vs-applied state. Preserve explicit restart/undo semantics and exact-match validation.
 4. **App picker polish:** the Applications grid and Aliases dropdown share the same trusted `apps` list, including a sanitized `Icon=` field. Remaining: empty/duplicate states, keyboard navigation in the popup, and layout/contrast checks on both monitors.
-5. **Provider presentation:** only local faster-whisper exists. Show it as a status/capability summary now; add a real provider selector only when multiple production providers and their configuration paths exist. Do not show a nonfunctional choice.
+5. **Provider presentation:** Settings has a **Provider** dropdown. v0.1 lists only **faster-whisper**. Model, Device and Language appear from that provider’s capabilities (tiny.en / base.en / small.en, CPU, English). CUDA appears only when `/dev/nvidia0` exists or the current config is already cuda. Writes go through `omarchy-voice settings stt <key> <value>` into `config.toml`; the running daemon does not pick them up until **Apply STT**. Do not add whisper.cpp, Voxtype, or cloud rows until those providers exist.
 6. **Future action design:** the Action picker currently offers only **Open application**. Closing an app is not implemented; define an explicit target and nonvoice confirmation policy before offering it. Do not repurpose the existing focused-window close as silent app termination.
 
 ## Bugs

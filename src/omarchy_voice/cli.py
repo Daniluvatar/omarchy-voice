@@ -9,8 +9,8 @@ import signal
 import sys
 import threading
 import wave
-from .aliases import read_aliases, remove_alias, set_alias
-from .config import load_config
+from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd
+from .config import load_config, set_stt, stt_options, stt_snapshot
 from .core import DesktopRegistry, VoiceError, Router, parse
 from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
@@ -53,6 +53,14 @@ def parser():
     add.add_argument("application")
     remove = alias_commands.add_parser("remove")
     remove.add_argument("phrase")
+    settings = sub.add_parser("settings")
+    settings_commands = settings.add_subparsers(dest="settings_command", required=True)
+    settings_commands.add_parser("show")
+    keybind = settings_commands.add_parser("keybind-osd")
+    keybind.add_argument("enabled", choices=("on", "off"))
+    stt = settings_commands.add_parser("stt")
+    stt.add_argument("key", choices=("provider", "model", "device", "language"))
+    stt.add_argument("value")
     return p
 
 
@@ -111,6 +119,31 @@ def main(argv=None):
             else:
                 phrase = remove_alias(args.phrase)
                 result = {"state": "idle", "message": "Alias removed; restart voice service to apply", "phrase": phrase}
+        elif command == "settings":
+            if args.settings_command == "show":
+                result = {
+                    "state": "idle",
+                    "message": "Voice settings",
+                    **read_settings(),
+                    "stt": stt_snapshot(config),
+                    "stt_options": stt_options(config),
+                }
+            elif args.settings_command == "keybind-osd":
+                enabled = set_keybind_osd(args.enabled == "on")
+                result = {
+                    "state": "idle",
+                    "message": "Keybind OSD " + ("on" if enabled else "off"),
+                    "keybind_osd": enabled,
+                }
+            else:
+                snapshot = set_stt(args.key, args.value, path=args.config)
+                applied = load_config(args.config)
+                result = {
+                    "state": "idle",
+                    "message": "STT setting saved; restart voice service to apply",
+                    "stt": snapshot,
+                    "stt_options": stt_options(applied),
+                }
         elif command == "confirm":
             result = request("confirm", token=args.token)
         elif command == "parse":

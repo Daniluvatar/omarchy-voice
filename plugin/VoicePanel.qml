@@ -43,7 +43,50 @@ Panel {
     property string actionChoice: "app.launch"
     property string voiceInputMode: "record"
     property bool showSettings: false
+    property bool keybindOsd: true
+    property var stt: ({
+        provider: "faster-whisper",
+        model: "tiny.en",
+        device: "cpu",
+        language: "en"
+    })
+    property var sttOptions: ({
+        providers: [{ value: "faster-whisper", label: "faster-whisper (local)" }],
+        capabilities: {
+            "faster-whisper": {
+                model: [
+                    { value: "tiny.en", label: "tiny.en (fastest)" },
+                    { value: "base.en", label: "base.en" },
+                    { value: "small.en", label: "small.en (more accurate)" }
+                ],
+                device: [{ value: "cpu", label: "CPU" }],
+                language: [{ value: "en", label: "English" }]
+            }
+        }
+    })
+    property string sttStatus: ""
     property string appSearchText: ""
+    property string catalog: "apps"
+
+    readonly property var desktopWindows: [
+        { phrase: "Close window", action: "Close the focused window (needs confirm)" },
+        { phrase: "Move this window left", action: "Move the focused window to the left monitor" },
+        { phrase: "Move this window right", action: "Move the focused window to the right monitor" },
+        { phrase: "Move this window to the other screen", action: "Move the focused window to the other monitor" }
+    ]
+    readonly property var desktopWorkspaces: [
+        { phrase: "Workspace four", action: "Switch focus to workspace 4" },
+        { phrase: "Switch to workspace four", action: "Move the focused window to workspace 4" },
+        { phrase: "Move this window to workspace 4", action: "Move the focused window to workspace 4" },
+        { phrase: "Move window to the left workspace", action: "Move the focused window one workspace left" },
+        { phrase: "Move window to the right workspace", action: "Move the focused window one workspace right" }
+    ]
+    readonly property var desktopSystem: [
+        { phrase: "Mute", action: "Toggle output mute" },
+        { phrase: "Volume up", action: "Raise output volume" },
+        { phrase: "Volume down", action: "Lower output volume" },
+        { phrase: "Lock computer", action: "Lock the desktop" }
+    ]
 
     readonly property string selectedAppName: {
         for (var i = 0; i < appCatalog.length; i++)
@@ -65,7 +108,6 @@ Panel {
         if (appChoice === "")
             return rows
         var name = selectedAppName
-        rows.push({ phrase: "Open " + name, action: "Launch " + name })
         for (var i = 0; i < selectedAppAliases.length; i++)
             rows.push({ phrase: "open " + selectedAppAliases[i].phrase, action: "Open " + name })
         return rows
@@ -121,6 +163,7 @@ Panel {
     Component.onCompleted: {
         appQuery.running = true
         aliasRequest(["list"])
+        settingsRequest(["show"])
     }
 
     onOpenedChanged: if (root.opened && !appQuery.running) appQuery.running = true
@@ -195,6 +238,26 @@ Panel {
         root.showSettings = false
     }
 
+    function settingsRequest(args) {
+        if (settingsCommand.running) return
+        settingsCommand.command = ["omarchy-voice", "settings"].concat(args)
+        settingsCommand.running = true
+    }
+
+    function sttCapability(name) {
+        var caps = root.sttOptions && root.sttOptions.capabilities
+        var provider = root.stt && root.stt.provider
+        if (!caps || !provider || !caps[provider] || !Array.isArray(caps[provider][name]))
+            return []
+        return caps[provider][name]
+    }
+
+    function applyStt(key, value) {
+        if (!root.stt || String(root.stt[key] || "") === String(value || ""))
+            return
+        root.settingsRequest(["stt", key, value])
+    }
+
     VoiceModel {
         id: voice
         onConfirmationRequested: root.open()
@@ -219,6 +282,23 @@ Panel {
         command: ["omarchy-voice-edit-config"]
     }
     Process {
+        id: settingsCommand
+        stdout: StdioCollector { id: settingsOutput }
+        onExited: function(code) {
+            try {
+                var data = JSON.parse(settingsOutput.text)
+                if (typeof data.keybind_osd === "boolean")
+                    root.keybindOsd = data.keybind_osd
+                if (data.stt)
+                    root.stt = data.stt
+                if (data.stt_options)
+                    root.sttOptions = data.stt_options
+                if (settingsCommand.command.indexOf("stt") >= 0)
+                    root.sttStatus = data.message || (code === 0 ? "STT setting saved" : "Could not save STT setting")
+            } catch (e) {}
+        }
+    }
+    Process {
         id: aliasCommand
         stdout: StdioCollector { id: aliasOutput }
         onExited: function(code) {
@@ -241,6 +321,14 @@ Panel {
         command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
         onExited: function(code) {
             root.aliasStatus = code === 0 ? "Voice service restarted; saved aliases are active" : "Could not restart voice service"
+        }
+    }
+    Process {
+        id: sttRestart
+        command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
+        onExited: function(code) {
+            root.sttStatus = code === 0 ? "Voice service restarted; STT settings are active" : "Could not restart voice service"
+            if (code === 0) root.settingsRequest(["show"])
         }
     }
     Process {
@@ -389,7 +477,7 @@ Panel {
                         onClicked: voice.action("cancel", "")
                     }
                     Button {
-                        text: root.showSettings ? "Applications" : "Settings"
+                        text: root.showSettings ? (root.catalog === "desktop" ? "Desktop" : "Applications") : "Settings"
                         onClicked: root.showSettings = !root.showSettings
                     }
                 }
@@ -398,6 +486,22 @@ Panel {
                     width: parent.width
                     spacing: Style.space(12)
                     visible: !root.showSettings
+
+                    ButtonGroup {
+                        options: [
+                            { value: "apps", label: "Applications" },
+                            { value: "desktop", label: "Desktop" }
+                        ]
+                        value: root.catalog
+                        foreground: root.panelForeground
+                        fontFamily: root.panelFont
+                        onChanged: function(value) { root.catalog = value }
+                    }
+
+                    Column {
+                        width: parent.width
+                        spacing: Style.space(12)
+                        visible: root.catalog === "apps"
 
                     TextField {
                         id: appSearch
@@ -459,7 +563,7 @@ Panel {
                     Text {
                         width: parent.width
                         visible: root.appChoice === ""
-                        text: "Click an application to see its voice commands and enroll an alias. This does not launch it."
+                        text: "Click an application to enroll a spoken alias. Commands appear only after an alias is saved for that app. This does not launch it."
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
                         color: root.panelDim
@@ -475,6 +579,7 @@ Panel {
                         PanelSeparator { foreground: root.panelForeground }
 
                         PanelSectionHeader {
+                            visible: root.selectedAppCommands.length > 0
                             text: "COMMANDS · " + root.selectedAppName.toUpperCase()
                             foreground: root.panelForeground
                             fontFamily: root.panelFont
@@ -587,6 +692,65 @@ Panel {
                             }
                         }
                     }
+                    }
+
+                    Column {
+                        width: parent.width
+                        spacing: Style.space(12)
+                        visible: root.catalog === "desktop"
+
+                        Text {
+                            width: parent.width
+                            text: "Desktop commands are separate from applications. These phrases run on the focused window or session — they do not launch an app. Super+K swap-window chords are keyboard-only; voice does not swap."
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: root.panelDim
+                            font.family: root.panelFont
+                            font.pixelSize: Style.font.caption
+                        }
+                        PanelSectionHeader {
+                            text: "WINDOWS"
+                            foreground: root.panelForeground
+                            fontFamily: root.panelFont
+                        }
+                        Repeater {
+                            model: root.desktopWindows
+                            CommandRow {
+                                required property var modelData
+                                width: parent.width
+                                phrase: modelData.phrase
+                                action: modelData.action
+                            }
+                        }
+                        PanelSectionHeader {
+                            text: "WORKSPACES"
+                            foreground: root.panelForeground
+                            fontFamily: root.panelFont
+                        }
+                        Repeater {
+                            model: root.desktopWorkspaces
+                            CommandRow {
+                                required property var modelData
+                                width: parent.width
+                                phrase: modelData.phrase
+                                action: modelData.action
+                            }
+                        }
+                        PanelSectionHeader {
+                            text: "SYSTEM"
+                            foreground: root.panelForeground
+                            fontFamily: root.panelFont
+                        }
+                        Repeater {
+                            model: root.desktopSystem
+                            CommandRow {
+                                required property var modelData
+                                width: parent.width
+                                phrase: modelData.phrase
+                                action: modelData.action
+                            }
+                        }
+                    }
                 }
 
                 Column {
@@ -627,24 +791,88 @@ Panel {
                     PanelSeparator { foreground: root.panelForeground }
 
                     PanelSectionHeader {
+                        text: "FEEDBACK"
+                        foreground: root.panelForeground
+                        fontFamily: root.panelFont
+                    }
+                    Toggle {
+                        width: parent.width
+                        label: "Show keybinding"
+                        description: "After a successful command, show the Super+K chord on the bottom-center OSD. Off skips the overlay. Applies immediately."
+                        checked: root.keybindOsd
+                        foreground: root.panelForeground
+                        fontFamily: root.panelFont
+                        onClicked: root.settingsRequest(["keybind-osd", root.keybindOsd ? "off" : "on"])
+                    }
+
+                    PanelSeparator { foreground: root.panelForeground }
+
+                    PanelSectionHeader {
                         text: "PROVIDER"
                         foreground: root.panelForeground
                         fontFamily: root.panelFont
                     }
                     Text {
                         width: parent.width
-                        text: "Local audio · faster-whisper. No cloud transcription provider in v0.1. Initial model download may require network access. Actions may launch networked apps."
+                        text: "Choose a speech provider, then the options that provider supports. v0.1 ships faster-whisper only. Changing model or device writes config.toml; restart the voice service to apply. A new model may need `omarchy-voice download-model` first."
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
                         color: root.panelForeground
                         font.family: root.panelFont
                     }
+                    Dropdown {
+                        width: parent.width
+                        label: "Provider"
+                        value: root.stt.provider
+                        options: root.sttOptions.providers
+                        onChanged: function(value) { root.applyStt("provider", value) }
+                    }
+                    Dropdown {
+                        width: parent.width
+                        visible: root.sttCapability("model").length > 0
+                        label: "Model"
+                        value: root.stt.model
+                        options: root.sttCapability("model")
+                        onChanged: function(value) { root.applyStt("model", value) }
+                    }
+                    Dropdown {
+                        width: parent.width
+                        visible: root.sttCapability("device").length > 0
+                        label: "Device"
+                        value: root.stt.device
+                        options: root.sttCapability("device")
+                        onChanged: function(value) { root.applyStt("device", value) }
+                    }
+                    Dropdown {
+                        width: parent.width
+                        visible: root.sttCapability("language").length > 0
+                        label: "Language"
+                        value: root.stt.language
+                        options: root.sttCapability("language")
+                        onChanged: function(value) { root.applyStt("language", value) }
+                    }
                     Text {
                         width: parent.width
-                        text: voice.providerInfo
+                        text: root.stt.provider + " · " + root.stt.model + " · " + root.stt.device + " · " + root.stt.language
                         textFormat: Text.PlainText
-                        wrapMode: Text.WrapAnywhere
+                        wrapMode: Text.Wrap
                         color: root.panelDim
+                        font.family: root.panelFont
+                        font.pixelSize: Style.font.caption
+                    }
+                    Button {
+                        text: "Apply STT (restart voice service)"
+                        enabled: !sttRestart.running && !voice.busy &&
+                                 (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
+                        onClicked: sttRestart.running = true
+                    }
+                    Text {
+                        width: parent.width
+                        visible: root.sttStatus !== ""
+                        text: root.sttStatus
+                        textFormat: Text.PlainText
+                        wrapMode: Text.Wrap
+                        color: root.panelForeground
                         font.family: root.panelFont
                         font.pixelSize: Style.font.caption
                     }
@@ -658,7 +886,7 @@ Panel {
                     }
                     Text {
                         width: parent.width
-                        text: "Settings: model, device, language and action permissions live in config.toml. Save the file and restart the voice service. Logs: ~/.local/state/omarchy-voice/voice.log"
+                        text: "Action permissions and capture limits still live in config.toml. Provider, model, device and language can be set above. Logs: ~/.local/state/omarchy-voice/voice.log"
                         textFormat: Text.PlainText
                         wrapMode: Text.Wrap
                         color: root.panelForeground
