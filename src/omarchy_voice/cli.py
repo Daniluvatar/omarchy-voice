@@ -11,7 +11,7 @@ import threading
 import wave
 from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd
 from .config import load_config, set_stt, stt_options, stt_snapshot
-from .core import DesktopRegistry, VoiceError, Router, parse
+from .core import APP_ALIASES, DesktopRegistry, VoiceError, Router, parse
 from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
 from .service import Controller, Server, request, runtime_dir
@@ -75,6 +75,32 @@ def dry_run(text, config):
         "requires_confirmation": intent.action == "window.close",
     }
 
+
+def app_catalog(config):
+    """Show only installed apps and launch phrases that the router can plan."""
+    registry = DesktopRegistry(aliases=config.aliases)
+    apps = registry.applications()
+    by_id = {app["id"]: app for app in apps}
+    for app in apps:
+        app["commands"] = []
+    router = Router(config, registry=registry)
+    for name in sorted(set(APP_ALIASES) | set(config.aliases)):
+        phrase = "open " + name
+        try:
+            argv = router.plan(parse(phrase))
+        except VoiceError:
+            continue
+        if argv[:2] == ["gio", "launch"] and len(argv) == 3:
+            for root in registry.roots:
+                try:
+                    ident = str(Path(argv[2]).relative_to(root)).replace("/", "-")
+                except ValueError:
+                    continue
+                app = by_id.get(ident)
+                if app is not None:
+                    app["commands"].append(phrase)
+                break
+    return apps
 
 def transcribe_file(path, config):
     try:
@@ -177,7 +203,7 @@ def main(argv=None):
                 ],
             }
         elif command == "apps":
-            result = {"state": "idle", "message": "Installed applications", "apps": DesktopRegistry().applications()}
+            result = {"state": "idle", "message": "Installed applications", "apps": app_catalog(config)}
         elif command == "doctor":
             checks = {
                 name: shutil.which(name) is not None

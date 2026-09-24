@@ -62,14 +62,44 @@ def test_alias_cli_json_and_no_execution(apps, capsys):
     assert main(["apps"]) == 0
     listed = json.loads(capsys.readouterr().out)["apps"]
     assert any(app["id"] == "spotify.desktop" and app["name"] == "Spotify" and app.get("icon") for app in listed)
+    assert "open spotify" in listed[0]["commands"]
     assert main(["alias", "set", "open music app", "Spotify"]) == 0
     assert json.loads(capsys.readouterr().out)["desktop_id"] == "spotify.desktop"
+    assert main(["apps"]) == 0
+    listed = json.loads(capsys.readouterr().out)["apps"]
+    assert "open music app" in listed[0]["commands"]
     assert main(["alias", "list"]) == 0
     assert json.loads(capsys.readouterr().out)["aliases"] == {"music app": "spotify.desktop"}
     assert main(["run", "open music app"]) == 0
     assert json.loads(capsys.readouterr().out)["argv"] == ["gio", "launch", str(apps)]
     assert main(["alias", "remove", "music app"]) == 0
     assert json.loads(capsys.readouterr().out)["phrase"] == "music app"
+
+def test_app_command_catalog_only_lists_valid_routes(apps, capsys):
+    (apps.parent / "brave-browser.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave\n"
+    )
+    (apps.parent / "plain.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Plain\nExec=plain\n"
+    )
+    assert main(["apps"]) == 0
+    listed = {app["id"]: app["commands"] for app in json.loads(capsys.readouterr().out)["apps"]}
+    assert "open browser" in listed["brave-browser.desktop"]
+    assert "open brave" in listed["brave-browser.desktop"]
+    assert "open spotify" in listed["spotify.desktop"]
+    assert listed["plain.desktop"] == []
+    assert len(listed["brave-browser.desktop"]) == len(set(listed["brave-browser.desktop"]))
+
+    from omarchy_voice.cli import app_catalog
+    denied = {app["id"]: app["commands"] for app in app_catalog(Config(permissions=()))}
+    assert not any(denied.values())
+    # An alias that collides with the built-in browser phrase cannot claim another app.
+    conflicted = {app["id"]: app["commands"] for app in app_catalog(
+        Config(aliases={"brave": "brave-browser.desktop", "spotify": "spotify.desktop",
+                        "browser": "spotify.desktop"})
+    )}
+    assert "open browser" in conflicted["brave-browser.desktop"]
+    assert "open browser" not in conflicted["spotify.desktop"]
 
 
 def test_app_picker_excludes_hidden_and_untrusted_entries(apps, tmp_path, monkeypatch):
