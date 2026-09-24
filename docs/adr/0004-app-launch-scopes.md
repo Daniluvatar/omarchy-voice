@@ -1,6 +1,6 @@
 # ADR 0004: Launch applications in independent user scopes
 
-Status: accepted for the local app-launch workflow; live GUI acceptance pending.
+Status: accepted for the local app-launch workflow; one live GUI app checked.
 
 ## Context
 
@@ -31,8 +31,14 @@ The unit/security/integration suite and native QML harness passed. In an
 isolated transient user service, the real `_launch_application` created a scope
 under `app.slice`; a harmless Python child wrote a survival marker after its
 parent service was stopped. The live voice service and user's GUI applications
-were not restarted or closed. Live app behavior, scope handoff under load, and
-alias activation still require acceptance testing before issue #4 can close.
+were not restarted or closed in that probe. After installing the fix, a live
+Brave window launched through the voice daemon remained visible with the same
+PID in a separate application scope after a voice-service restart. The user
+later reported that saving/applying a recorded Spotify phrase did not close
+TopTracker or other apps; the alias mapping and dry-run route were read back,
+but microphone recognition was not independently instrumented. Other app
+types, scope handoff under load, and failure/error reporting still require
+acceptance testing before issue #4 can close.
 
 `systemd-run` and a functioning systemd user manager are now required for app
 launches. Manual `serve` also uses scopes; dry-run planning still reports the
