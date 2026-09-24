@@ -25,6 +25,7 @@ Item {
         voiceState = "error"
         message = text
         confirmationToken = ""
+        aliasRecording = false
     }
     function acceptStatus(data) {
         var states = ["idle", "listening", "transcribing", "executing", "confirmation", "alias_review", "error"]
@@ -36,6 +37,9 @@ Item {
         var fresh = token !== "" && token !== confirmationToken
         var newAlias = data.state === "alias_review" && typeof data.alias_text === "string" &&
                        (voiceState !== "alias_review" || aliasText !== data.alias_text)
+        // Each monitor polls the same daemon. Only the widget that began this
+        // recording may reopen its panel with the reviewed phrase.
+        var localAliasReview = newAlias && aliasRecording
         voiceState = data.state
         message = data.message
         confirmationToken = token
@@ -43,7 +47,7 @@ Item {
         if (data.state !== "listening" && data.state !== "transcribing") aliasRecording = false
         available = true
         if (fresh) confirmationRequested()
-        if (newAlias) aliasHeard(aliasText)
+        if (localAliasReview) aliasHeard(aliasText)
     }
     function action(verb, token) {
         if (["start", "start-alias", "stop", "cancel", "confirm"].indexOf(verb) < 0 || pendingAction.length > 0) return
