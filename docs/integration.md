@@ -119,18 +119,22 @@ text is saved in the user configuration; ordinary transcripts remain in the
 local backend diagnostic log. Inspect its retention and permission policy
 independently.
 
-The **Spoken app alias** section has three choices: searchable **Application**
-(installed desktop entry), **Action** (Open application only), and **Voice phrase**
-(record-and-review or type). Select Spotify, press **Record alias**, speak, then
-**Finish alias recording**. Review/edit the heard text before saving. You can
-type a phrase instead of recording. Closing an app is not supported; closing a
-window still requires the distinct confirmation workflow. The audio is deleted; reviewed
-phrase-to-desktop-ID mappings are stored in
-`$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active after an
-explicit service restart via **Apply saved aliases** (or `systemctl --user restart omarchy-voice.service`). **Show aliases** and **Remove alias** manage only the
-panel's mappings, not TOML entries. This is exact matching, not STT model
-training or fuzzy launch. The existing diagnostic log still contains local
-transcriptions.
+Select an installed app to see **Voice commands → Current configured commands**:
+built-in/configured `open …` routes that actually resolve to that app and saved
+panel phrases. Click **New command** to reveal the **Voice phrase** choice
+(record-and-review or type). For Spotify, press **●** to record, speak, then
+**■** to finish. Review/edit the heard text before **✓** to save, or type
+a phrase instead. The only app action is **Open application**; closing an app is
+not supported, and closing a window still requires the distinct confirmation
+workflow. The audio is deleted; reviewed phrase-to-desktop-ID mappings are
+stored in `$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active
+after an explicit service restart via **Apply saved phrases** (or
+`systemctl --user restart omarchy-voice.service`). With the app-scope backend
+fix installed, voice-launched apps survived a live restart; see issue #4 for
+verification details. Each saved command has a pencil (✎) on the right to edit/record a replacement phrase (stored atomically, without overwriting a different saved phrase), and a remove (×) icon that switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML alias, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
+only the panel's mappings. This is exact matching,
+not STT model training or fuzzy launch. The existing diagnostic log still
+contains local transcriptions.
 
 “Open configuration…” invokes the shipped fixed helper argv. It opens
 `$XDG_CONFIG_HOME/omarchy-voice/config.toml` (default
@@ -159,8 +163,8 @@ allow = []
 ```
 
 v0.1 has **no live configuration API for general settings**, model downloader UI,
-editable provider selector, microphone chooser, waveform, or in-panel
-permissions editor. The panel does have reviewed app-alias enrollment and
+microphone chooser, waveform, or in-panel permissions editor. The panel does
+have a provider selector and reviewed app-alias enrollment and
 removal; it does not change action permissions. Save the file, cancel any
 capture, then run
 `systemctl --user restart omarchy-voice.service`. Recreate/reload the widget to
@@ -193,7 +197,7 @@ permission and local model availability, hold/release the shortcut, inspect
 listening → transcribing → executing/idle, deny/approve a harmless test request,
 check expiry/error recovery, and verify popup focus/placement on each monitor.
 For aliases, record a Spotify example without executing, review the heard text,
-save it, click **Apply saved aliases**, then speak the alias and confirm the actual app
+save it, click **Apply saved phrases** only after protecting work in voice-launched apps, then speak the alias and confirm the actual app
 appears. No live alias enrollment, model inference or disruptive action has been
 claimed tested by the automated harness.
 

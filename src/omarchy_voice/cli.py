@@ -9,9 +9,9 @@ import signal
 import sys
 import threading
 import wave
-from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd
+from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd, update_alias
 from .config import load_config, set_stt, stt_options, stt_snapshot
-from .core import DesktopRegistry, VoiceError, Router, parse
+from .core import APP_ALIASES, DesktopRegistry, VoiceError, Router, parse
 from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
 from .service import Controller, Server, request, runtime_dir
@@ -51,6 +51,10 @@ def parser():
     add = alias_commands.add_parser("set")
     add.add_argument("phrase")
     add.add_argument("application")
+    update = alias_commands.add_parser("update")
+    update.add_argument("old_phrase")
+    update.add_argument("new_phrase")
+    update.add_argument("application")
     remove = alias_commands.add_parser("remove")
     remove.add_argument("phrase")
     settings = sub.add_parser("settings")
@@ -75,6 +79,32 @@ def dry_run(text, config):
         "requires_confirmation": intent.action == "window.close",
     }
 
+
+def app_catalog(config):
+    """Show only installed apps and launch phrases that the router can plan."""
+    registry = DesktopRegistry(aliases=config.aliases)
+    apps = registry.applications()
+    by_id = {app["id"]: app for app in apps}
+    for app in apps:
+        app["commands"] = []
+    router = Router(config, registry=registry)
+    for name in sorted(set(APP_ALIASES) | set(config.aliases)):
+        phrase = "open " + name
+        try:
+            argv = router.plan(parse(phrase))
+        except VoiceError:
+            continue
+        if argv[:2] == ["gio", "launch"] and len(argv) == 3:
+            for root in registry.roots:
+                try:
+                    ident = str(Path(argv[2]).relative_to(root)).replace("/", "-")
+                except ValueError:
+                    continue
+                app = by_id.get(ident)
+                if app is not None:
+                    app["commands"].append(phrase)
+                break
+    return apps
 
 def transcribe_file(path, config):
     try:
@@ -116,6 +146,9 @@ def main(argv=None):
             elif args.alias_command == "set":
                 phrase, desktop_id = set_alias(args.phrase, args.application, config)
                 result = {"state": "idle", "message": "Alias saved; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
+            elif args.alias_command == "update":
+                phrase, desktop_id = update_alias(args.old_phrase, args.new_phrase, args.application, config)
+                result = {"state": "idle", "message": "Alias updated; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
             else:
                 phrase = remove_alias(args.phrase)
                 result = {"state": "idle", "message": "Alias removed; restart voice service to apply", "phrase": phrase}
@@ -177,7 +210,7 @@ def main(argv=None):
                 ],
             }
         elif command == "apps":
-            result = {"state": "idle", "message": "Installed applications", "apps": DesktopRegistry().applications()}
+            result = {"state": "idle", "message": "Installed applications", "apps": app_catalog(config)}
         elif command == "doctor":
             checks = {
                 name: shutil.which(name) is not None

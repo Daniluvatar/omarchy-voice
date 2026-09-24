@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from omarchy_voice.aliases import read_aliases, remove_alias, set_alias
+from omarchy_voice.aliases import read_aliases, remove_alias, set_alias, update_alias
 from omarchy_voice.cli import main
 from omarchy_voice.config import Config, load_config
 from omarchy_voice.core import DesktopRegistry, Router, VoiceError, parse
@@ -62,14 +62,72 @@ def test_alias_cli_json_and_no_execution(apps, capsys):
     assert main(["apps"]) == 0
     listed = json.loads(capsys.readouterr().out)["apps"]
     assert any(app["id"] == "spotify.desktop" and app["name"] == "Spotify" and app.get("icon") for app in listed)
+    assert "open spotify" in listed[0]["commands"]
     assert main(["alias", "set", "open music app", "Spotify"]) == 0
     assert json.loads(capsys.readouterr().out)["desktop_id"] == "spotify.desktop"
+    assert main(["apps"]) == 0
+    listed = json.loads(capsys.readouterr().out)["apps"]
+    assert "open music app" in listed[0]["commands"]
     assert main(["alias", "list"]) == 0
     assert json.loads(capsys.readouterr().out)["aliases"] == {"music app": "spotify.desktop"}
     assert main(["run", "open music app"]) == 0
     assert json.loads(capsys.readouterr().out)["argv"] == ["gio", "launch", str(apps)]
     assert main(["alias", "remove", "music app"]) == 0
     assert json.loads(capsys.readouterr().out)["phrase"] == "music app"
+
+
+def test_update_alias_replaces_phrase_atomically(apps, capsys):
+    config = load_config()
+    set_alias("open music app", "Spotify", config)
+    set_alias("open spotify", "Spotify", config)
+    assert main(["alias", "update", "music app", "open favorite music", "spotify.desktop"]) == 0
+    result = json.loads(capsys.readouterr().out)
+    assert result["phrase"] == "favorite music"
+    assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
+    assert Router(load_config()).plan(parse("open favorite music")) == ["gio", "launch", str(apps)]
+    with pytest.raises(VoiceError, match="unavailable or ambiguous"):
+        Router(load_config()).plan(parse("open music app"))
+    for old, new in (("favorite music", "spotify"), ("missing", "another"),
+                     ("favorite music", "open music app; mute")):
+        with pytest.raises(VoiceError):
+            update_alias(old, new, "spotify.desktop", load_config())
+        assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
+
+
+def test_update_alias_keeps_old_phrase_when_target_is_invalid(apps):
+    set_alias("music app", "Spotify", load_config())
+    with pytest.raises(VoiceError):
+        update_alias("music app", "new music", "missing.desktop", load_config())
+    assert read_aliases() == {"music app": "spotify.desktop"}
+
+def test_app_command_catalog_only_lists_valid_routes(apps, capsys):
+    (apps.parent / "brave-browser.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave\n"
+    )
+    (apps.parent / "plain.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Plain\nExec=plain\n"
+    )
+    assert main(["apps"]) == 0
+    listed = {app["id"]: app["commands"] for app in json.loads(capsys.readouterr().out)["apps"]}
+    assert "open browser" in listed["brave-browser.desktop"]
+    assert "open brave" in listed["brave-browser.desktop"]
+    assert "open spotify" in listed["spotify.desktop"]
+    assert "open a spotify" not in listed["spotify.desktop"]
+    assert "open and spotify" not in listed["spotify.desktop"]
+    assert "open is spotify" not in listed["spotify.desktop"]
+    assert listed["plain.desktop"] == []
+    assert len(listed["brave-browser.desktop"]) == len(set(listed["brave-browser.desktop"]))
+
+    from omarchy_voice.cli import app_catalog
+    denied = {app["id"]: app["commands"] for app in app_catalog(Config(permissions=()))}
+    assert not any(denied.values())
+    # An alias that collides with the built-in browser phrase cannot claim another app.
+    conflicted = {app["id"]: app["commands"] for app in app_catalog(
+        Config(aliases={"brave": "brave-browser.desktop", "spotify": "spotify.desktop",
+                        "browser": "spotify.desktop"})
+    )}
+    assert "open browser" in conflicted["brave-browser.desktop"]
+    assert "open browser" not in conflicted["spotify.desktop"]
 
 
 def test_app_picker_excludes_hidden_and_untrusted_entries(apps, tmp_path, monkeypatch):

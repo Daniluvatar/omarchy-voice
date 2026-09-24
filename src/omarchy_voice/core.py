@@ -181,9 +181,6 @@ APP_ALIASES = {
     "terminator": "terminal",
     "ghostty": "terminal",
     "spotify": "spotify",
-    "a spotify": "spotify",
-    "and spotify": "spotify",
-    "is spotify": "spotify",
 }
 
 
