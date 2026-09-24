@@ -84,7 +84,7 @@ def _icon_index():
 
 
 def _launch_application(argv):
-    """Observe startup briefly, never impose a lifetime on the application."""
+    """Move app launches to a user scope before the voice service can stop."""
     process = None
     spawned = threading.Event()
 
@@ -103,7 +103,7 @@ def _launch_application(argv):
         raise OSError("Cannot start application reaper") from exc
     try:
         process = subprocess.Popen(
-            argv,
+            ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--", *argv],
             shell=False,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
