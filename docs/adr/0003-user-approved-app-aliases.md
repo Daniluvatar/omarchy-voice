@@ -31,6 +31,10 @@ not triggered by microphone input or saving the alias. The recording is not
 stored; the reviewed transcript remains in local diagnostics under the existing
 log policy.
 
+## Amendment
+
+A saved phrase must not retarget a command that already opens a different installed application. **open brave** and **open chromium** are separate app phrases. **open browser** is a role: with no saved phrase it runs `omarchy launch browser`, so a change of the OS default applies without editing voice configuration. Saving **open browser** pins only that phrase; removing it returns to the OS default.
+
 ## Limits
 
 Only application launches can be aliased. Recognition errors unrelated to

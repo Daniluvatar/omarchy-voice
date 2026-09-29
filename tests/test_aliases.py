@@ -94,23 +94,57 @@ def test_update_alias_replaces_phrase_atomically(apps, capsys):
         assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
 
 
+def test_taken_phrase_cannot_move_another_apps_commands(apps, capsys):
+    applications = apps.parent
+    (applications / "brave-browser.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave\n"
+    )
+    (applications / "chromium.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Chromium\nExec=chromium\n"
+    )
+    config = load_config()
+    brave = applications / "brave-browser.desktop"
+    chromium = applications / "chromium.desktop"
+    assert Router(config).plan(parse("open brave")) == ["gio", "launch", str(brave)]
+    assert Router(config).plan(parse("open chromium")) == ["gio", "launch", str(chromium)]
+    assert Router(config).plan(parse("open browser")) == ["omarchy", "launch", "browser"]
+    for phrase in ("open chromium", "chromium", "open brave", "open brave browser"):
+        with pytest.raises(VoiceError, match="already taken"):
+            set_alias(phrase, "spotify.desktop", config)
+        assert read_aliases() == {}
+    assert set_alias("open browser", "chromium.desktop", config) == ("browser", "chromium.desktop")
+    pinned = load_config()
+    assert Router(pinned).plan(parse("open browser")) == ["gio", "launch", str(chromium)]
+    assert Router(pinned).plan(parse("open brave")) == ["gio", "launch", str(brave)]
+    assert Router(pinned).plan(parse("open chromium")) == ["gio", "launch", str(chromium)]
+    assert main(["alias", "set", "open chromium", "brave-browser.desktop"]) == 1
+    assert "already taken" in json.loads(capsys.readouterr().out)["message"]
+    assert read_aliases() == {"browser": "chromium.desktop"}
+
+
 def test_update_alias_keeps_old_phrase_when_target_is_invalid(apps):
     set_alias("music app", "Spotify", load_config())
     with pytest.raises(VoiceError):
         update_alias("music app", "new music", "missing.desktop", load_config())
     assert read_aliases() == {"music app": "spotify.desktop"}
 
-def test_app_command_catalog_only_lists_valid_routes(apps, capsys):
+def test_app_command_catalog_only_lists_valid_routes(apps, capsys, monkeypatch):
     (apps.parent / "brave-browser.desktop").write_text(
         "[Desktop Entry]\nType=Application\nName=Brave\nExec=brave\n"
+    )
+    (apps.parent / "chromium.desktop").write_text(
+        "[Desktop Entry]\nType=Application\nName=Chromium\nExec=chromium\n"
     )
     (apps.parent / "plain.desktop").write_text(
         "[Desktop Entry]\nType=Application\nName=Plain\nExec=plain\n"
     )
+    monkeypatch.setattr("omarchy_voice.cli.default_browser_desktop_id", lambda: "brave-browser.desktop")
     assert main(["apps"]) == 0
     listed = {app["id"]: app["commands"] for app in json.loads(capsys.readouterr().out)["apps"]}
     assert "open browser" in listed["brave-browser.desktop"]
     assert "open brave" in listed["brave-browser.desktop"]
+    assert "open chromium" in listed["chromium.desktop"]
+    assert "open chromium" not in listed["brave-browser.desktop"]
     assert "open spotify" in listed["spotify.desktop"]
     assert "open a spotify" not in listed["spotify.desktop"]
     assert "open and spotify" not in listed["spotify.desktop"]
@@ -121,13 +155,15 @@ def test_app_command_catalog_only_lists_valid_routes(apps, capsys):
     from omarchy_voice.cli import app_catalog
     denied = {app["id"]: app["commands"] for app in app_catalog(Config(permissions=()))}
     assert not any(denied.values())
-    # An alias that collides with the built-in browser phrase cannot claim another app.
+    # An explicit saved browser phrase overrides only that role.
     conflicted = {app["id"]: app["commands"] for app in app_catalog(
         Config(aliases={"brave": "brave-browser.desktop", "spotify": "spotify.desktop",
-                        "browser": "spotify.desktop"})
+                        "browser": "spotify.desktop"}),
+        default_browser="brave-browser.desktop",
     )}
-    assert "open browser" in conflicted["brave-browser.desktop"]
-    assert "open browser" not in conflicted["spotify.desktop"]
+    assert "open browser" in conflicted["spotify.desktop"]
+    assert "open browser" not in conflicted["brave-browser.desktop"]
+    assert "open brave" in conflicted["brave-browser.desktop"]
 
 
 def test_app_picker_excludes_hidden_and_untrusted_entries(apps, tmp_path, monkeypatch):

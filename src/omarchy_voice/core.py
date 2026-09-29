@@ -169,11 +169,17 @@ MOVE_WORKSPACE_SIDE = re.compile(
     r"\s+(?:(left|right|previous|next)\s+workspace|workspace\s+(left|right|previous|next))\Z"
 )
 APP = re.compile(r"[a-z0-9][a-z0-9 ._+-]{0,79}\Z")
+DESKTOP_FILE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.desktop\Z")
+# Role phrases follow the OS/Omarchy default unless that exact role is saved.
+ROLE_LAUNCH = {
+    "browser": ["omarchy", "launch", "browser"],
+    "terminal": ["omarchy", "launch", "terminal"],
+}
 APP_ALIASES = {
     "brave": "brave",
     "brave browser": "brave",
-    "browser": "brave",
-    "chromium": "brave",
+    "browser": "browser",
+    "chromium": "chromium",
     "terminal": "terminal",
     "the terminal": "terminal",
     "term": "terminal",
@@ -182,6 +188,22 @@ APP_ALIASES = {
     "ghostty": "terminal",
     "spotify": "spotify",
 }
+
+
+def default_browser_desktop_id(runner=subprocess.run):
+    """Read the current default browser desktop ID. Never launches a browser."""
+    for command in (
+        ["xdg-settings", "get", "default-web-browser"],
+        ["xdg-mime", "query", "default", "x-scheme-handler/https"],
+    ):
+        try:
+            result = runner(command, check=False, timeout=2, capture_output=True, text=True)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        value = (getattr(result, "stdout", "") or "").strip()
+        if DESKTOP_FILE.fullmatch(value):
+            return value
+    return None
 
 
 def _workspace_number(value):
@@ -409,10 +431,10 @@ class Router:
             value = p["application"]
             if type(value) is not str or not APP.fullmatch(value) or ".." in value:
                 raise VoiceError("Invalid application")
-            # Spoken "terminal" uses Omarchy's default terminal. A configured
-            # terminal alias still launches that desktop file instead.
-            if value == "terminal" and "terminal" not in self.config.aliases:
-                return ["omarchy", "launch", "terminal"]
+            # Unconfigured role phrases follow Omarchy's current default.
+            # A saved alias for that exact role launches the chosen desktop file.
+            if value in ROLE_LAUNCH and value not in self.config.aliases:
+                return list(ROLE_LAUNCH[value])
             return ["gio", "launch", str(self.registry.resolve(value))]
         if a == "workspace.switch":
             if type(p["number"]) is not int or not 1 <= p["number"] <= 10:
