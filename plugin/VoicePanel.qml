@@ -35,6 +35,10 @@ Panel {
 
     property string aliasStatus: ""
     property var aliasEntries: []
+    property bool aliasRefreshPending: false
+    property bool appRefreshPending: false
+    property bool aliasesPendingApply: false
+    property string aliasRequestApp: ""
     property var appOptions: []
     property var appCatalog: []
     property int appPage: 0
@@ -177,12 +181,16 @@ Panel {
     }
 
     Component.onCompleted: {
-        appQuery.running = true
-        aliasRequest(["list"])
+        refreshApps()
+        refreshAliases()
         settingsRequest(["show"])
     }
 
-    onOpenedChanged: if (root.opened && !appQuery.running) appQuery.running = true
+    onOpenedChanged: if (root.opened) {
+        refreshAliases()
+        refreshApps()
+    }
+    onCatalogChanged: if (root.catalog === "desktop") clearAppSelection()
 
     function applyShortcut(value) {
         var entry = { id: root.moduleName }
@@ -217,9 +225,37 @@ Panel {
     }
 
     function aliasRequest(args) {
+        if (args[0] === "list") {
+            refreshAliases()
+            return
+        }
         if (aliasCommand.running) return
+        aliasRequestApp = appChoice
         aliasCommand.command = ["omarchy-voice", "alias"].concat(args)
         aliasCommand.running = true
+    }
+
+    function refreshAliases() {
+        aliasRefreshPending = true
+        pumpAliasRefresh()
+    }
+
+    function pumpAliasRefresh() {
+        if (!aliasRefreshPending || aliasCommand.running) return
+        aliasRefreshPending = false
+        aliasCommand.command = ["omarchy-voice", "alias", "list"]
+        aliasCommand.running = true
+    }
+
+    function refreshApps() {
+        appRefreshPending = true
+        pumpAppRefresh()
+    }
+
+    function pumpAppRefresh() {
+        if (!appRefreshPending || appQuery.running) return
+        appRefreshPending = false
+        appQuery.running = true
     }
 
     function showAliasesTab() {
@@ -248,15 +284,57 @@ Panel {
         return ""
     }
 
-    function selectApp(app) {
-        if (!app || !app.id) return
-        root.appChoice = app.id
+    function clearAppSelection() {
+        root.appChoice = ""
         root.addingCommand = false
         root.editingPhrase = ""
         root.pendingRemovePhrase = ""
         phraseField.text = ""
         root.aliasStatus = ""
+    }
+
+    function selectApp(app) {
+        if (!app || !app.id) return
+        clearAppSelection()
+        root.appChoice = app.id
         root.showSettings = false
+    }
+
+    function editSavedPhrase(savedKey, phrase) {
+        root.pendingRemovePhrase = ""
+        root.editingPhrase = savedKey
+        root.addingCommand = true
+        root.voiceInputMode = "type"
+        phraseField.text = phrase
+        // Let the repeater/Column settle before measuring the editor position.
+        editorRevealTimer.phrase = savedKey
+        editorRevealTimer.restart()
+    }
+
+    function revealCommandEditor() {
+        if (!root.opened || !root.addingCommand || root.editingPhrase !== editorRevealTimer.phrase || content.height <= 0)
+            return
+        var editorTop = commandEditor.mapToItem(content.contentItem, 0, 0).y
+        var editorBottom = editorTop + commandEditor.height
+        var maxScroll = Math.max(0, content.contentHeight - content.height)
+        if (!commandEditorInView())
+            content.contentY = Math.max(0, Math.min(maxScroll, editorBottom - content.height + Style.space(12)))
+        phraseField.forceActiveFocus()
+        phraseField.selectAll()
+    }
+
+    function commandEditorInView() {
+        if (!root.addingCommand || content.height <= 0) return false
+        var top = commandEditor.mapToItem(content.contentItem, 0, 0).y
+        var bottom = top + commandEditor.height
+        return top >= content.contentY && bottom <= content.contentY + content.height
+    }
+
+    Timer {
+        id: editorRevealTimer
+        property string phrase: ""
+        interval: 80
+        onTriggered: root.revealCommandEditor()
     }
 
     function settingsRequest(args) {
@@ -323,30 +401,43 @@ Panel {
     Process {
         id: aliasCommand
         stdout: StdioCollector { id: aliasOutput }
+        onRunningChanged: if (!running) Qt.callLater(root.pumpAliasRefresh)
         onExited: function(code) {
+            var listing = aliasCommand.command[2] === "list"
             try {
                 var data = JSON.parse(aliasOutput.text)
-                root.aliasStatus = data.message || "Alias request failed"
-                if (code !== 0) return
-                if (data.aliases) {
+                if (code !== 0 || data.state === "error") {
+                    if (listing || root.aliasRequestApp === root.appChoice)
+                        root.aliasStatus = data.message || "Alias request failed"
+                } else if (listing) {
+                    if (!data.aliases || typeof data.aliases !== "object" || Array.isArray(data.aliases))
+                        throw new Error("Invalid alias list")
                     root.setAliases(data.aliases)
-                    if (!appQuery.running) appQuery.running = true
-                } else if (aliasCommand.command.indexOf("list") < 0) {
-                    root.addingCommand = false
-                    root.editingPhrase = ""
-                    root.pendingRemovePhrase = ""
-                    Qt.callLater(function() { root.aliasRequest(["list"]) })
+                    root.refreshApps()
+                } else {
+                    root.aliasesPendingApply = true
+                    if (root.aliasRequestApp === root.appChoice) {
+                        root.aliasStatus = data.message || "Phrase saved; Apply to activate"
+                        root.addingCommand = false
+                        root.editingPhrase = ""
+                        root.pendingRemovePhrase = ""
+                    }
+                    root.refreshAliases()
                 }
             } catch (e) {
-                root.aliasStatus = "Could not read alias response"
+                if (listing || root.aliasRequestApp === root.appChoice)
+                    root.aliasStatus = listing ? "Could not refresh saved phrases; showing last known list" : "Could not read alias response; refresh the panel before retrying"
             }
+            // onExited may run before Process.running becomes false.
+            Qt.callLater(root.pumpAliasRefresh)
         }
     }
     Process {
         id: aliasRestart
         command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
         onExited: function(code) {
-            root.aliasStatus = code === 0 ? "Voice service restarted; saved aliases are active" : "Could not restart voice service"
+            if (code === 0) root.aliasesPendingApply = false
+            root.aliasStatus = code === 0 ? "Voice service restart completed; activation has not been verified" : "Could not restart voice service"
         }
     }
     Process {
@@ -361,6 +452,7 @@ Panel {
         id: appQuery
         command: ["omarchy-voice", "apps"]
         stdout: StdioCollector { id: appOutput }
+        onRunningChanged: if (!running) Qt.callLater(root.pumpAppRefresh)
         onExited: function(code) {
             try {
                 var data = JSON.parse(appOutput.text)
@@ -375,7 +467,8 @@ Panel {
                 }
                 root.appOptions = options
                 root.appCatalog = catalog
-                root.appPage = 0
+                if (root.appChoice !== "" && !catalog.some(function(app) { return app.id === root.appChoice }))
+                    root.clearAppSelection()
                 root.setAliases(function() {
                     var current = {}
                     for (var j = 0; j < root.aliasEntries.length; j++)
@@ -383,8 +476,9 @@ Panel {
                     return current
                 }())
             } catch (e) {
-                root.aliasStatus = "Could not list installed applications"
+                root.aliasStatus = "Could not refresh installed applications; showing last known list"
             }
+            Qt.callLater(root.pumpAppRefresh)
         }
     }
     KeyboardPanel {
@@ -534,7 +628,14 @@ Panel {
                         id: appSearch
                         width: parent.width
                         placeholderText: "Search applications…"
-                        onTextChanged: { root.appSearchText = text; root.appPage = 0 }
+                        onTextChanged: {
+                            root.appSearchText = text
+                            root.appPage = 0
+                            var selected = root.selectedAppName.toLowerCase()
+                            var query = text.toLowerCase()
+                            if (root.appChoice !== "" && query && selected.indexOf(query) < 0 && root.appChoice.toLowerCase().indexOf(query) < 0)
+                                root.clearAppSelection()
+                        }
                     }
                     Text {
                         width: parent.width
@@ -617,7 +718,7 @@ Panel {
                         }
                         Text {
                             width: parent.width
-                            text: "Default phrases are fixed; use the icons to edit or remove saved phrases."
+                            text: "Showing saved configuration, not necessarily active in the voice service. Default phrases are fixed; use the icons to edit or remove saved phrases."
                             textFormat: Text.PlainText
                             wrapMode: Text.Wrap
                             color: root.panelDim
@@ -659,10 +760,7 @@ Panel {
                                                 root.pendingRemovePhrase = ""
                                                 return
                                             }
-                                            root.editingPhrase = modelData.savedKey
-                                            root.addingCommand = true
-                                            root.voiceInputMode = "type"
-                                            phraseField.text = modelData.phrase
+                                            root.editSavedPhrase(modelData.savedKey, modelData.phrase)
                                         }
                                     }
                                     Button {
@@ -695,6 +793,7 @@ Panel {
                             }
                         }
                         Column {
+                            id: commandEditor
                             width: parent.width
                             spacing: Style.space(8)
                             visible: root.addingCommand
@@ -760,8 +859,18 @@ Panel {
                         }
                         Text {
                             width: parent.width
+                            visible: root.aliasesPendingApply
+                            text: "Saved phrase changes are pending Apply; the voice service may still use the previous configuration."
+                            textFormat: Text.PlainText
+                            wrapMode: Text.Wrap
+                            color: root.panelForeground
+                            font.family: root.panelFont
+                            font.pixelSize: Style.font.caption
+                        }
+                        Text {
+                            width: parent.width
                             visible: root.aliasStatus !== ""
-                            text: root.aliasStatus + "\nAfter saving, updating, or removing a phrase, click Apply to explicitly restart the voice service. This never changes the STT model or runs the recorded phrase."
+                            text: root.aliasStatus
                             textFormat: Text.PlainText
                             wrapMode: Text.WrapAnywhere
                             color: root.panelForeground

@@ -131,10 +131,21 @@ stored in `$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active
 after an explicit service restart via **Apply saved phrases** (or
 `systemctl --user restart omarchy-voice.service`). With the app-scope backend
 fix installed, voice-launched apps survived a live restart; see issue #4 for
-verification details. Each saved command has a pencil (✎) on the right to edit/record a replacement phrase (stored atomically, without overwriting a different saved phrase), and a remove (×) icon that switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML alias, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
+verification details. Each saved command has a pencil (✎) on the right: clicking it scrolls to the shared editor below the list and focuses/selects the existing phrase for replacement (stored atomically, without overwriting a different saved phrase). The row itself is not editable. A remove (×) icon switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML alias, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
 only the panel's mappings. **open browser** follows the OS default browser until that exact phrase is saved. **open brave** and **open chromium** stay bound to those installed apps and cannot be moved onto each other. This is exact matching,
 not STT model training or fuzzy launch. The existing diagnostic log still
 contains local transcriptions.
+
+On opening the panel, the saved alias list and installed-app routes are
+refreshed; a refresh requested while a CLI operation is running is queued.
+Successful saves/updates/removals reread both sources. The current app selection
+is kept across a popup reopen if it still exists, but changing to Desktop,
+searching away from it or losing that app on refresh clears its detail and
+unfinished editor. Switching directly to another app resets the form. Failed
+alias writes leave the saved rows and editor intact. The displayed rows are
+disk configuration, not proof of which phrases the running daemon has loaded.
+Changes made in this panel instance show a pending-Apply notice until a
+successful restart command; that exit code alone does not verify activation.
 
 “Open configuration…” invokes the shipped fixed helper argv. It opens
 `$XDG_CONFIG_HOME/omarchy-voice/config.toml` (default
@@ -174,6 +185,7 @@ refresh cached provider capabilities if dependencies change.
 
 ```sh
 python3 integrations/validate.py
+# Included: temporary-fixture native panel refresh/save/update/remove checks.
 /usr/lib/qt6/bin/qmllint plugin/VoiceModel.qml
 systemd-analyze --user verify integrations/omarchy-voice.service
 ```
