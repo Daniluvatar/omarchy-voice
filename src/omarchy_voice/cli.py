@@ -11,7 +11,7 @@ import threading
 import wave
 from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd, update_alias
 from .config import load_config, set_stt, stt_options, stt_snapshot
-from .core import APP_ALIASES, DesktopRegistry, VoiceError, Router, parse
+from .core import APP_ALIASES, DesktopRegistry, ROLE_LAUNCH, VoiceError, Router, default_browser_desktop_id, parse
 from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
 from .service import Controller, Server, request, runtime_dir
@@ -80,7 +80,7 @@ def dry_run(text, config):
     }
 
 
-def app_catalog(config):
+def app_catalog(config, default_browser=None):
     """Show only installed apps and launch phrases that the router can plan."""
     registry = DesktopRegistry(aliases=config.aliases)
     apps = registry.applications()
@@ -88,11 +88,18 @@ def app_catalog(config):
     for app in apps:
         app["commands"] = []
     router = Router(config, registry=registry)
+    if default_browser is None and "browser" not in config.aliases:
+        default_browser = default_browser_desktop_id()
     for name in sorted(set(APP_ALIASES) | set(config.aliases)):
         phrase = "open " + name
         try:
             argv = router.plan(parse(phrase))
         except VoiceError:
+            continue
+        if argv == ROLE_LAUNCH["browser"]:
+            app = by_id.get(default_browser)
+            if app is not None:
+                app["commands"].append(phrase)
             continue
         if argv[:2] == ["gio", "launch"] and len(argv) == 3:
             for root in registry.roots:

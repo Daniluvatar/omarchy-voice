@@ -132,7 +132,7 @@ after an explicit service restart via **Apply saved phrases** (or
 `systemctl --user restart omarchy-voice.service`). With the app-scope backend
 fix installed, voice-launched apps survived a live restart; see issue #4 for
 verification details. Each saved command has a pencil (✎) on the right to edit/record a replacement phrase (stored atomically, without overwriting a different saved phrase), and a remove (×) icon that switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML alias, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
-only the panel's mappings. This is exact matching,
+only the panel's mappings. **open browser** follows the OS default browser until that exact phrase is saved. **open brave** and **open chromium** stay bound to those installed apps and cannot be moved onto each other. This is exact matching,
 not STT model training or fuzzy launch. The existing diagnostic log still
 contains local transcriptions.
 

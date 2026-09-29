@@ -7,7 +7,7 @@ import re
 import stat
 import tempfile
 
-from .core import APP, DesktopRegistry, VoiceError, parse
+from .core import APP, APP_ALIASES, DesktopRegistry, ROLE_LAUNCH, VoiceError, parse
 
 DESKTOP_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.desktop\Z")
 MAX_ALIASES = 32
@@ -74,11 +74,17 @@ def _save(aliases):
             temporary.unlink(missing_ok=True)
 
 
-def _alias_key(phrase):
+def _phrase_text(phrase):
     if type(phrase) is not str or len(phrase) > 128:
         raise VoiceError("Invalid alias")
     phrase = " ".join(phrase.lower().strip().split())
-    intent = parse(phrase if phrase.startswith(("open ", "launch ", "start ")) else "open " + phrase)
+    if not phrase.startswith(("open ", "launch ", "start ")):
+        phrase = "open " + phrase
+    return phrase
+
+
+def _alias_key(phrase):
+    intent = parse(_phrase_text(phrase))
     if intent.action != "app.launch":
         raise VoiceError("Alias must name an application")
     key = intent.parameters["application"]
@@ -87,15 +93,62 @@ def _alias_key(phrase):
     return key
 
 
+def _desktop_id_for_path(path, registry):
+    return next(
+        (str(path.relative_to(root)).replace("/", "-") for root in registry.roots if path.is_relative_to(root)),
+        None,
+    )
+
+
+def _application_label(desktop_id, registry):
+    for app in registry.applications():
+        if app["id"] == desktop_id and app.get("name"):
+            return app["name"]
+    return "another application"
+
+
+def _reject_if_taken(phrase, desktop_id, config):
+    """Reject a phrase that already opens a different specific application.
+
+    App names stay with that app: saving "open chromium" cannot rewrite Brave.
+    "open browser" is a role. With no saved browser phrase it follows the OS
+    default, so the first explicit save may pin that one phrase. It does not
+    move "open brave" or "open chromium".
+    """
+    text = _phrase_text(phrase)
+    spoken = text.split(" ", 1)[1]
+    registry = DesktopRegistry(aliases=config.aliases)
+    try:
+        intent = parse(text)
+    except VoiceError:
+        intent = None
+    application = intent.parameters["application"] if intent is not None and intent.action == "app.launch" else None
+    if application in ROLE_LAUNCH and application not in config.aliases:
+        return
+    current_id = None
+    if application and application not in ROLE_LAUNCH:
+        try:
+            current_id = _desktop_id_for_path(registry.resolve(application), registry)
+        except VoiceError:
+            current_id = None
+    if current_id and current_id != desktop_id:
+        raise VoiceError(
+            "That voice command is already taken; it opens " + _application_label(current_id, registry)
+        )
+    canonical = APP_ALIASES.get(spoken)
+    configured = config.aliases.get(canonical) if canonical else None
+    if configured and configured != desktop_id:
+        raise VoiceError(
+            "That voice command is already taken; it opens " + _application_label(configured, registry)
+        )
+
+
 def _desktop_id(application, config):
     if type(application) is not str:
         raise VoiceError("Invalid application")
     registry = DesktopRegistry(aliases=config.aliases)
     path = registry.resolve(application.lower().strip())
-    desktop_id = next(
-        (str(path.relative_to(root)).replace("/", "-") for root in registry.roots if path.is_relative_to(root)),
-        None,
-    )
+    desktop_id = _desktop_id_for_path(path, registry)
     if not desktop_id or not DESKTOP_ID.fullmatch(desktop_id):
         raise VoiceError("Invalid application")
     return desktop_id
@@ -104,6 +157,7 @@ def _desktop_id(application, config):
 def set_alias(phrase, application, config):
     key = _alias_key(phrase)
     desktop_id = _desktop_id(application, config)
+    _reject_if_taken(phrase, desktop_id, config)
     aliases = read_aliases()
     if key not in aliases and len(aliases) >= MAX_ALIASES:
         raise VoiceError("Too many aliases")
@@ -122,6 +176,7 @@ def update_alias(old_phrase, new_phrase, application, config):
     if new_key != old_key and new_key in aliases:
         raise VoiceError("Alias already exists")
     desktop_id = _desktop_id(application, config)
+    _reject_if_taken(new_phrase, desktop_id, config)
     del aliases[old_key]
     aliases[new_key] = desktop_id
     _save(aliases)
