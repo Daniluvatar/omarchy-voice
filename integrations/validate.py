@@ -7,6 +7,7 @@ This does not install a plugin or start a microphone/desktop action.
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 
 repo = Path(__file__).resolve().parents[1]
@@ -41,6 +42,9 @@ ShellRoot {
             console.error("FAIL panel compile: " + component.errorString())
             return
         }
+        var panel = component.createObject(null)
+        if (!panel) throw new Error("panel instantiation failed: " + component.errorString())
+        panel.destroy()
         var states = ["idle", "listening", "transcribing", "executing", "confirmation", "error"]
         for (var i = 0; i < states.length; ++i) {
             model.acceptStatus({state: states[i], message: "test", confirmation_token: "test-token"})
@@ -81,4 +85,5 @@ ShellRoot {
     print(result.stderr, end='')
     if result.returncode or 'PASS panel compilation' not in result.stdout + result.stderr:
         raise SystemExit('QML validation failed')
-print('PASS manifest, Lua syntax, native QML compilation, model checks')
+subprocess.run([sys.executable, str(repo / 'integrations/validate_panel_refresh.py')], check=True)
+print('PASS manifest, Lua syntax, native QML compilation, model and panel refresh checks')
