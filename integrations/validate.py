@@ -27,13 +27,13 @@ ShellRoot {
         id: model
         pollingEnabled: false
         property int heardCount: 0
-        onAliasHeard: function(text) { heardCount++ }
+        onVoiceCommandHeard: function(text) { heardCount++ }
     }
     VoiceModel {
         id: otherMonitor
         pollingEnabled: false
         property int heardCount: 0
-        onAliasHeard: function(text) { heardCount++ }
+        onVoiceCommandHeard: function(text) { heardCount++ }
     }
     Timer { interval: 100; running: true; onTriggered: Qt.quit() }
     Component.onCompleted: {
@@ -52,23 +52,23 @@ ShellRoot {
         }
         model.acceptStatus({state: "idle", message: "test"})
         if (model.confirmationToken !== "") throw new Error("stale token")
-        model.aliasRecording = true // This instance began the recording.
-        otherMonitor.acceptStatus({state: "alias_review", message: "review", alias_text: "Open is putty high."})
-        if (otherMonitor.heardCount !== 0) throw new Error("other monitor received alias review")
-        model.acceptStatus({state: "alias_review", message: "review", alias_text: "Open is putty high."})
-        model.acceptStatus({state: "alias_review", message: "review", alias_text: "Open is putty high."})
-        if (model.aliasText !== "Open is putty high." || model.heardCount !== 1 || model.aliasRecording)
-            throw new Error("alias text was lost or repeatedly emitted")
+        model.voiceCommandRecording = true // This instance began the recording.
+        otherMonitor.acceptStatus({state: "voice_command_review", message: "review", voice_command_text: "Open is putty high."})
+        if (otherMonitor.heardCount !== 0) throw new Error("other monitor received voice command review")
+        model.acceptStatus({state: "voice_command_review", message: "review", voice_command_text: "Open is putty high."})
+        model.acceptStatus({state: "voice_command_review", message: "review", voice_command_text: "Open is putty high."})
+        if (model.voiceCommandText !== "Open is putty high." || model.heardCount !== 1 || model.voiceCommandRecording)
+            throw new Error("voice command text was lost or repeatedly emitted")
         model.acceptStatus({state: "idle", message: "test"})
-        if (model.aliasText !== "") throw new Error("stale alias text")
-        var invalidAlias = false
-        try { model.acceptStatus({state: "alias_review", message: "bad"}) } catch (e) { invalidAlias = true }
-        if (!invalidAlias) throw new Error("missing alias transcript accepted")
+        if (model.voiceCommandText !== "") throw new Error("stale voice command text")
+        var invalidReview = false
+        try { model.acceptStatus({state: "voice_command_review", message: "bad"}) } catch (e) { invalidReview = true }
+        if (!invalidReview) throw new Error("missing transcript accepted")
         var rejected = false
         try { model.acceptStatus({state: "invented", message: "bad"}) } catch (e) { rejected = true }
         if (!rejected) throw new Error("invalid state accepted")
         model.fail("offline")
-        if (model.available || model.voiceState !== "error" || model.aliasRecording) throw new Error("offline not handled")
+        if (model.available || model.voiceState !== "error" || model.voiceCommandRecording) throw new Error("offline not handled")
         console.log("PASS panel compilation and model state/token/error checks")
     }
 }

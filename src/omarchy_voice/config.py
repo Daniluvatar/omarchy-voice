@@ -8,7 +8,7 @@ import stat
 import tempfile
 import tomllib
 from .core import ACTIONS, APP, VoiceError
-from .aliases import read_aliases
+from .voice_commands import read_voice_commands
 
 STT_PROVIDERS = ("faster-whisper",)
 STT_MODELS = ("tiny.en", "base.en", "small.en")
@@ -28,8 +28,12 @@ _SCHEMA = {
     "confirmation": {"timeout_seconds"},
     "notifications": {"enabled"},
     "permissions": {"allow"},
-    "applications": {"aliases"},
+    "applications": {"aliases", "voice_commands"},
 }
+
+#: Legacy TOML table name, still accepted when reading configuration.
+_LEGACY_APPLICATIONS_KEY = "aliases"
+_APPLICATIONS_KEY = "voice_commands"
 
 
 @dataclass(frozen=True)
@@ -44,7 +48,7 @@ class Config:
     confirmation_seconds: float = 15
     notifications: bool = False
     permissions: tuple = tuple(sorted(ACTIONS))
-    aliases: dict = field(
+    voice_commands: dict = field(
         default_factory=lambda: {
             "brave": "brave-browser.desktop",
             "spotify": "spotify.desktop",
@@ -83,16 +87,16 @@ class Config:
             type(a) is not str or a not in ACTIONS for a in self.permissions
         ):
             raise VoiceError("Invalid permissions")
-        if type(self.aliases) is not dict:
-            raise VoiceError("Invalid aliases")
-        for key, value in self.aliases.items():
+        if type(self.voice_commands) is not dict:
+            raise VoiceError("Invalid voice commands")
+        for key, value in self.voice_commands.items():
             if (
                 type(key) is not str
                 or not APP.fullmatch(key)
                 or type(value) is not str
                 or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._+-]*\.desktop", value)
             ):
-                raise VoiceError("Invalid application alias")
+                raise VoiceError("Invalid voice command")
 
 
 def config_path():
@@ -159,11 +163,15 @@ def _emit_toml(data):
         if type(table) is not dict:
             raise VoiceError("Invalid configuration")
         if section == "applications":
-            aliases = table.get("aliases") or {}
-            if type(aliases) is not dict:
-                raise VoiceError("Invalid configuration")
-            chunks.append("[applications.aliases]")
-            for key, value in aliases.items():
+            merged = {}
+            for key in (_LEGACY_APPLICATIONS_KEY, _APPLICATIONS_KEY):
+                if key in table:
+                    part = table[key]
+                    if type(part) is not dict:
+                        raise VoiceError("Invalid configuration")
+                    merged.update(part)
+            chunks.append("[applications.voice_commands]")
+            for key, value in merged.items():
                 chunks.append(f'{key} = {_toml_value(value)}')
             chunks.append("")
             continue
@@ -254,6 +262,17 @@ def _flatten(data):
     for section, table in data.items():
         if type(table) is not dict or set(table) - _SCHEMA[section]:
             raise VoiceError("Unknown configuration setting")
+        if section == "applications":
+            # Both table spellings are accepted; the current one wins on conflict.
+            merged = {}
+            for key in (_LEGACY_APPLICATIONS_KEY, _APPLICATIONS_KEY):
+                if key in table:
+                    part = table[key]
+                    if type(part) is not dict:
+                        raise VoiceError("Unknown configuration setting")
+                    merged.update(part)
+            values["voice_commands"] = merged
+            continue
         for key, value in table.items():
             target = {
                 "confirmation": {"timeout_seconds": "confirmation_seconds"},
@@ -280,7 +299,7 @@ def load_config(path=None):
     except FileNotFoundError:
         if not explicit:
             defaults = Config()
-            return replace(defaults, aliases={**defaults.aliases, **read_aliases()})
+            return replace(defaults, voice_commands={**defaults.voice_commands, **read_voice_commands()})
         raise VoiceError("Configuration not found")
     except (OSError, UnicodeError, tomllib.TOMLDecodeError, RecursionError) as exc:
         raise VoiceError("Cannot load configuration") from exc
@@ -288,6 +307,6 @@ def load_config(path=None):
         raise VoiceError("Unknown configuration section")
     try:
         config = Config(**_flatten(data))
-        return replace(config, aliases={**config.aliases, **read_aliases()})
+        return replace(config, voice_commands={**config.voice_commands, **read_voice_commands()})
     except (TypeError, ValueError) as exc:
         raise VoiceError("Invalid configuration") from exc

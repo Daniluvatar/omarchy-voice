@@ -145,12 +145,12 @@ def test_denied_launch_never_spawns(monkeypatch):
         Router(Config(permissions=())).execute(parse("open the terminal"))
 
 
-def test_terminal_alias_uses_same_launch_path(children, tmp_path):
+def test_terminal_voice_command_uses_same_launch_path(children, tmp_path):
     desktop = tmp_path / "foot.desktop"
     desktop.write_text("[Desktop Entry]\nType=Application\nName=Foot\nExec=foot\n")
-    config = Config(aliases={"terminal": "foot.desktop"})
+    config = Config(voice_commands={"terminal": "foot.desktop"})
     processes, calls = children("pass")
-    Router(config, registry=DesktopRegistry([tmp_path], config.aliases)).execute(parse("open the terminal"))
+    Router(config, registry=DesktopRegistry([tmp_path], config.voice_commands)).execute(parse("open the terminal"))
     assert calls[0][0] == ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--",
                            "gio", "launch", str(desktop)]
     assert processes[0].returncode == 0

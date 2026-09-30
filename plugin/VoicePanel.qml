@@ -33,12 +33,12 @@ Panel {
     readonly property color panelDim: Qt.darker(root.barForeground, 1.4)
     readonly property string panelFont: bar ? bar.fontFamily : Style.font.family
 
-    property string aliasStatus: ""
-    property var aliasEntries: []
-    property bool aliasRefreshPending: false
+    property string commandStatus: ""
+    property var commandEntries: []
+    property bool commandRefreshPending: false
     property bool appRefreshPending: false
-    property bool aliasesPendingApply: false
-    property string aliasRequestApp: ""
+    property bool commandsPendingApply: false
+    property string commandRequestApp: ""
     property var appOptions: []
     property var appCatalog: []
     property int appPage: 0
@@ -101,14 +101,11 @@ Panel {
         return appLabelFor(appChoice)
     }
 
-    readonly property var selectedAppAliases: {
-        var out = []
-        for (var i = 0; i < aliasEntries.length; i++)
-            if (aliasEntries[i].desktopId === appChoice)
-                out.push(aliasEntries[i])
-        return out
-    }
     readonly property var selectedAppCommands: {
+        var saved = []
+        for (var m = 0; m < commandEntries.length; m++)
+            if (commandEntries[m].desktopId === appChoice)
+                saved.push(commandEntries[m])
         var commands = []
         var seen = {}
         for (var i = 0; i < appCatalog.length; i++) {
@@ -117,26 +114,26 @@ Panel {
             for (var j = 0; j < appCatalog[i].commands.length; j++) {
                 var phrase = appCatalog[i].commands[j]
                 var savedKey = ""
-                for (var s = 0; s < selectedAppAliases.length; s++)
-                    if (phrase === "open " + selectedAppAliases[s].phrase)
-                        savedKey = selectedAppAliases[s].phrase
+                for (var t = 0; t < saved.length; t++)
+                    if (phrase === "open " + saved[t].phrase)
+                        savedKey = saved[t].phrase
                 commands.push({ phrase: phrase, action: "Open " + selectedAppName, savedKey: savedKey })
                 seen[phrase] = true
             }
             break
         }
-        for (var k = 0; k < selectedAppAliases.length; k++) {
-            var saved = "open " + selectedAppAliases[k].phrase
-            if (!seen[saved])
-                commands.push({ phrase: saved, action: "Saved mapping (not currently routed here)", savedKey: selectedAppAliases[k].phrase })
+        for (var k = 0; k < saved.length; k++) {
+            var savedPhrase = "open " + saved[k].phrase
+            if (!seen[savedPhrase])
+                commands.push({ phrase: savedPhrase, action: "Saved mapping (not currently routed here)", savedKey: saved[k].phrase })
         }
         return commands
     }
 
     readonly property var configuredAppIds: {
         var ids = {}
-        for (var i = 0; i < aliasEntries.length; i++)
-            ids[aliasEntries[i].desktopId] = true
+        for (var i = 0; i < commandEntries.length; i++)
+            ids[commandEntries[i].desktopId] = true
         return ids
     }
 
@@ -166,15 +163,15 @@ Panel {
         if (!voice.available && voice.voiceState === "error")
             return "Offline"
         if (voice.voiceState === "listening")
-            return voice.aliasRecording ? "Recording alias" : "Listening"
+            return voice.voiceCommandRecording ? "Recording voice command" : "Listening"
         if (voice.voiceState === "transcribing")
             return "Transcribing"
         if (voice.voiceState === "executing")
             return "Running"
         if (voice.voiceState === "confirmation")
             return "Confirm"
-        if (voice.voiceState === "alias_review")
-            return "Review alias"
+        if (voice.voiceState === "voice_command_review")
+            return "Review voice command"
         if (voice.voiceState === "error")
             return "Error"
         return "Ready"
@@ -182,12 +179,12 @@ Panel {
 
     Component.onCompleted: {
         refreshApps()
-        refreshAliases()
+        refreshCommands()
         settingsRequest(["show"])
     }
 
     onOpenedChanged: if (root.opened) {
-        refreshAliases()
+        refreshCommands()
         refreshApps()
     }
     onCatalogChanged: if (root.catalog === "desktop") clearAppSelection()
@@ -212,39 +209,39 @@ Panel {
         return id
     }
 
-    function setAliases(aliases) {
+    function setCommands(commands) {
         var entries = []
-        if (aliases) {
-            for (var key in aliases) {
-                if (typeof key !== "string" || typeof aliases[key] !== "string")
+        if (commands) {
+            for (var key in commands) {
+                if (typeof key !== "string" || typeof commands[key] !== "string")
                     continue
-                entries.push({ phrase: key, desktopId: aliases[key], appLabel: appLabelFor(aliases[key]) })
+                entries.push({ phrase: key, desktopId: commands[key], appLabel: appLabelFor(commands[key]) })
             }
         }
-        aliasEntries = entries
+        commandEntries = entries
     }
 
-    function aliasRequest(args) {
+    function commandRequest(args) {
         if (args[0] === "list") {
-            refreshAliases()
+            refreshCommands()
             return
         }
-        if (aliasCommand.running) return
-        aliasRequestApp = appChoice
-        aliasCommand.command = ["omarchy-voice", "alias"].concat(args)
-        aliasCommand.running = true
+        if (commandJob.running) return
+        commandRequestApp = appChoice
+        commandJob.command = ["omarchy-voice", "voice-command"].concat(args)
+        commandJob.running = true
     }
 
-    function refreshAliases() {
-        aliasRefreshPending = true
-        pumpAliasRefresh()
+    function refreshCommands() {
+        commandRefreshPending = true
+        pumpCommandRefresh()
     }
 
-    function pumpAliasRefresh() {
-        if (!aliasRefreshPending || aliasCommand.running) return
-        aliasRefreshPending = false
-        aliasCommand.command = ["omarchy-voice", "alias", "list"]
-        aliasCommand.running = true
+    function pumpCommandRefresh() {
+        if (!commandRefreshPending || commandJob.running) return
+        commandRefreshPending = false
+        commandJob.command = ["omarchy-voice", "voice-command", "list"]
+        commandJob.running = true
     }
 
     function refreshApps() {
@@ -258,7 +255,7 @@ Panel {
         appQuery.running = true
     }
 
-    function showAliasesTab() {
+    function showCommandsTab() {
         root.showSettings = false
     }
 
@@ -290,7 +287,7 @@ Panel {
         root.editingPhrase = ""
         root.pendingRemovePhrase = ""
         phraseField.text = ""
-        root.aliasStatus = ""
+        root.commandStatus = ""
     }
 
     function selectApp(app) {
@@ -360,10 +357,10 @@ Panel {
     VoiceModel {
         id: voice
         onConfirmationRequested: root.open()
-        onAliasHeard: function(text) {
+        onVoiceCommandHeard: function(text) {
             phraseField.text = text
             root.addingCommand = true
-            root.showAliasesTab()
+            root.showCommandsTab()
             root.open()
         }
     }
@@ -399,45 +396,47 @@ Panel {
         }
     }
     Process {
-        id: aliasCommand
-        stdout: StdioCollector { id: aliasOutput }
-        onRunningChanged: if (!running) Qt.callLater(root.pumpAliasRefresh)
+        id: commandJob
+        stdout: StdioCollector { id: commandOutput }
+        onRunningChanged: if (!running) Qt.callLater(root.pumpCommandRefresh)
         onExited: function(code) {
-            var listing = aliasCommand.command[2] === "list"
+            var listing = commandJob.command[2] === "list"
             try {
-                var data = JSON.parse(aliasOutput.text)
+                var data = JSON.parse(commandOutput.text)
                 if (code !== 0 || data.state === "error") {
-                    if (listing || root.aliasRequestApp === root.appChoice)
-                        root.aliasStatus = data.message || "Alias request failed"
+                    if (listing || root.commandRequestApp === root.appChoice)
+                        root.commandStatus = data.message || "Voice command request failed"
                 } else if (listing) {
-                    if (!data.aliases || typeof data.aliases !== "object" || Array.isArray(data.aliases))
-                        throw new Error("Invalid alias list")
-                    root.setAliases(data.aliases)
+                    if (data.voice_commands === undefined)
+                        data.voice_commands = data.aliases
+                    if (typeof data.voice_commands !== "object" || data.voice_commands === null || Array.isArray(data.voice_commands))
+                        throw new Error("Invalid voice command list")
+                    root.setCommands(data.voice_commands)
                     root.refreshApps()
                 } else {
-                    root.aliasesPendingApply = true
-                    if (root.aliasRequestApp === root.appChoice) {
-                        root.aliasStatus = data.message || "Phrase saved; Apply to activate"
+                    root.commandsPendingApply = true
+                    if (root.commandRequestApp === root.appChoice) {
+                        root.commandStatus = data.message || "Phrase saved; Apply to activate"
                         root.addingCommand = false
                         root.editingPhrase = ""
                         root.pendingRemovePhrase = ""
                     }
-                    root.refreshAliases()
+                    root.refreshCommands()
                 }
             } catch (e) {
-                if (listing || root.aliasRequestApp === root.appChoice)
-                    root.aliasStatus = listing ? "Could not refresh saved phrases; showing last known list" : "Could not read alias response; refresh the panel before retrying"
+                if (listing || root.commandRequestApp === root.appChoice)
+                    root.commandStatus = listing ? "Could not refresh saved phrases; showing last known list" : "Could not read voice command response; refresh the panel before retrying"
             }
             // onExited may run before Process.running becomes false.
-            Qt.callLater(root.pumpAliasRefresh)
+            Qt.callLater(root.pumpCommandRefresh)
         }
     }
     Process {
-        id: aliasRestart
+        id: serviceRestart
         command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
         onExited: function(code) {
-            if (code === 0) root.aliasesPendingApply = false
-            root.aliasStatus = code === 0 ? "Voice service restart completed; activation has not been verified" : "Could not restart voice service"
+            if (code === 0) root.commandsPendingApply = false
+            root.commandStatus = code === 0 ? "Voice service restart completed; activation has not been verified" : "Could not restart voice service"
         }
     }
     Process {
@@ -469,14 +468,14 @@ Panel {
                 root.appCatalog = catalog
                 if (root.appChoice !== "" && !catalog.some(function(app) { return app.id === root.appChoice }))
                     root.clearAppSelection()
-                root.setAliases(function() {
+                root.setCommands(function() {
                     var current = {}
-                    for (var j = 0; j < root.aliasEntries.length; j++)
-                        current[root.aliasEntries[j].phrase] = root.aliasEntries[j].desktopId
+                    for (var j = 0; j < root.commandEntries.length; j++)
+                        current[root.commandEntries[j].phrase] = root.commandEntries[j].desktopId
                     return current
                 }())
             } catch (e) {
-                root.aliasStatus = "Could not refresh installed applications; showing last known list"
+                root.commandStatus = "Could not refresh installed applications; showing last known list"
             }
             Qt.callLater(root.pumpAppRefresh)
         }
@@ -754,7 +753,7 @@ Panel {
                                         text: root.pendingRemovePhrase === modelData.savedKey ? "↶" : "✎"
                                         tooltipText: root.pendingRemovePhrase === modelData.savedKey ? "Cancel removal" : "Update saved phrase"
                                         Accessible.name: tooltipText
-                                        enabled: !aliasCommand.running && modelData.savedKey !== ""
+                                        enabled: !commandJob.running && modelData.savedKey !== ""
                                         onClicked: {
                                             if (root.pendingRemovePhrase === modelData.savedKey) {
                                                 root.pendingRemovePhrase = ""
@@ -770,10 +769,10 @@ Panel {
                                         text: root.pendingRemovePhrase === modelData.savedKey ? "✓" : "×"
                                         tooltipText: root.pendingRemovePhrase === modelData.savedKey ? "Confirm removal" : "Remove saved phrase"
                                         Accessible.name: tooltipText
-                                        enabled: !aliasCommand.running && modelData.savedKey !== ""
+                                        enabled: !commandJob.running && modelData.savedKey !== ""
                                         onClicked: {
                                             if (root.pendingRemovePhrase === modelData.savedKey) {
-                                                root.aliasRequest(["remove", modelData.savedKey])
+                                                root.commandRequest(["remove", modelData.savedKey])
                                                 root.pendingRemovePhrase = ""
                                             } else {
                                                 root.pendingRemovePhrase = modelData.savedKey
@@ -824,14 +823,14 @@ Panel {
                                     tooltipText: "Record phrase (does not run the command)"
                                     Accessible.name: tooltipText
                                     enabled: root.appChoice !== "" && !voice.busy && voice.available &&
-                                             (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
-                                    onClicked: voice.action("start-alias", "")
+                                             (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "voice_command_review")
+                                    onClicked: voice.action("start-voice-command", "")
                                 }
                                 Button {
                                     iconText: "■"
                                     tooltipText: "Finish recording and review what was heard"
                                     Accessible.name: tooltipText
-                                    enabled: !voice.busy && voice.voiceState === "listening" && voice.aliasRecording
+                                    enabled: !voice.busy && voice.voiceState === "listening" && voice.voiceCommandRecording
                                     onClicked: voice.action("stop", "")
                                 }
                             }
@@ -846,20 +845,20 @@ Panel {
                                     iconText: "✓"
                                     tooltipText: root.editingPhrase ? "Save updated phrase; Apply to activate" : "Save phrase; Apply to activate"
                                     Accessible.name: tooltipText
-                                    enabled: !aliasCommand.running && phraseField.text.trim() !== "" && root.appChoice !== ""
-                                    onClicked: root.aliasRequest(root.editingPhrase ? ["update", root.editingPhrase, phraseField.text, root.appChoice] : ["set", phraseField.text, root.appChoice])
+                                    enabled: !commandJob.running && phraseField.text.trim() !== "" && root.appChoice !== ""
+                                    onClicked: root.commandRequest(root.editingPhrase ? ["update", root.editingPhrase, phraseField.text, root.appChoice] : ["set", phraseField.text, root.appChoice])
                                 }
                             }
                         }
                         Button {
                             text: "Apply saved phrases (restart voice service)"
-                            enabled: !aliasRestart.running && !aliasCommand.running && !voice.busy &&
-                                     (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
-                            onClicked: aliasRestart.running = true
+                            enabled: !serviceRestart.running && !commandJob.running && !voice.busy &&
+                                     (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "voice_command_review")
+                            onClicked: serviceRestart.running = true
                         }
                         Text {
                             width: parent.width
-                            visible: root.aliasesPendingApply
+                            visible: root.commandsPendingApply
                             text: "Saved phrase changes are pending Apply; the voice service may still use the previous configuration."
                             textFormat: Text.PlainText
                             wrapMode: Text.Wrap
@@ -869,8 +868,8 @@ Panel {
                         }
                         Text {
                             width: parent.width
-                            visible: root.aliasStatus !== ""
-                            text: root.aliasStatus
+                            visible: root.commandStatus !== ""
+                            text: root.commandStatus
                             textFormat: Text.PlainText
                             wrapMode: Text.WrapAnywhere
                             color: root.panelForeground
@@ -1049,7 +1048,7 @@ Panel {
                     Button {
                         text: "Apply STT (restart voice service)"
                         enabled: !sttRestart.running && !voice.busy &&
-                                 (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "alias_review")
+                                 (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "voice_command_review")
                         onClicked: sttRestart.running = true
                     }
                     Text {

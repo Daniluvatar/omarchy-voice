@@ -8,5 +8,6 @@ build/
 dist/
 .coverage
 htmlcov/
+tmp*/
 *.wav
 models/

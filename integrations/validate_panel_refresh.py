@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Exercise the real panel's asynchronous refresh flow with a harmless CLI fixture.
 
-The fixture is confined to TMPDIR and never touches the user's alias store,
-voice service, microphone, or desktop actions. It does not replace live UI QA.
+The fixture is confined to TMPDIR and never touches the user's voice-command
+store, voice service, microphone, or desktop actions. It does not replace live UI QA.
 """
 import json
 import os
@@ -40,26 +40,26 @@ elif args == ['settings', 'show']:
 elif args == ['apps']:
     response['apps'] = [
         {'id': ident, 'name': name, 'icon': '',
-         'commands': ['open ' + phrase for phrase, target in state['aliases'].items() if target == ident]
+         'commands': ['open ' + phrase for phrase, target in state['voice_commands'].items() if target == ident]
                      + (['open beta alternate ' + str(i) for i in range(16)] if ident == 'beta.desktop' else [])}
         for ident, name in [('alpha.desktop', 'Alpha'), ('beta.desktop', 'Beta')]
     ]
-elif args[:2] == ['alias', 'list']:
-    response['aliases'] = state['aliases']
-elif args[:2] == ['alias', 'set'] and args[2] == 'fail phrase':
+elif args[:2] == ['voice-command', 'list']:
+    response['voice_commands'] = state['voice_commands']
+elif args[:2] == ['voice-command', 'set'] and args[2] == 'fail phrase':
     response = {'state': 'error', 'message': 'Simulated write failure'}
     code = 1
-elif args[:2] == ['alias', 'set']:
+elif args[:2] == ['voice-command', 'set']:
     time.sleep(0.08)  # make the reopen/list request overlap the write
-    state['aliases'][args[2].removeprefix('open ')] = args[3]
+    state['voice_commands'][args[2].removeprefix('open ')] = args[3]
     save_state()
-elif args[:2] == ['alias', 'update']:
+elif args[:2] == ['voice-command', 'update']:
     previous = args[2].removeprefix('open ')
-    state['aliases'].pop(previous)
-    state['aliases'][args[3].removeprefix('open ')] = args[4]
+    state['voice_commands'].pop(previous)
+    state['voice_commands'][args[3].removeprefix('open ')] = args[4]
     save_state()
-elif args[:2] == ['alias', 'remove']:
-    state['aliases'].pop(args[2])
+elif args[:2] == ['voice-command', 'remove']:
+    state['voice_commands'].pop(args[2])
     save_state()
 else:
     response = {'state': 'error', 'message': 'Unexpected fixture request'}
@@ -95,33 +95,33 @@ ShellRoot {
         onTriggered: {
             ticks++
             if (ticks > 170) { fail("timed out in phase " + phase); return }
-            if (phase === 0 && panel.appCatalog.length === 2 && panel.aliasEntries.length === 2) {
+            if (phase === 0 && panel.appCatalog.length === 2 && panel.commandEntries.length === 2) {
                 panel.selectApp({id: "alpha.desktop"})
                 if (!has("open first phrase") || has("open other phrase")) { fail("wrong app rows on initial selection"); return }
-                panel.aliasRequest(["set", "new phrase", "alpha.desktop"])
-                panel.refreshAliases() // queued while set is still running
+                panel.commandRequest(["set", "new phrase", "alpha.desktop"])
+                panel.refreshCommands() // queued while set is still running
                 panel.selectApp({id: "beta.desktop"})
                 if (!has("open other phrase") || has("open first phrase")) { fail("old app rows leaked after switch"); return }
                 phase = 1
-            } else if (phase === 1 && panel.aliasEntries.some(function(a) { return a.phrase === "new phrase" }) &&
+            } else if (phase === 1 && panel.commandEntries.some(function(a) { return a.phrase === "new phrase" }) &&
                        panel.appCatalog.some(function(a) { return a.id === "alpha.desktop" && a.commands.indexOf("open new phrase") >= 0 })) {
-                if (has("open new phrase")) { fail("new alias appeared under wrong app"); return }
+                if (has("open new phrase")) { fail("new command appeared under wrong app"); return }
                 panel.selectApp({id: "alpha.desktop"})
-                if (!has("open new phrase") || !panel.aliasesPendingApply) { fail("saved phrase not shown as pending"); return }
-                panel.aliasRequest(["update", "new phrase", "renamed phrase", "alpha.desktop"])
+                if (!has("open new phrase") || !panel.commandsPendingApply) { fail("saved phrase not shown as pending"); return }
+                panel.commandRequest(["update", "new phrase", "renamed phrase", "alpha.desktop"])
                 phase = 2
-            } else if (phase === 2 && panel.aliasEntries.some(function(a) { return a.phrase === "renamed phrase" }) &&
+            } else if (phase === 2 && panel.commandEntries.some(function(a) { return a.phrase === "renamed phrase" }) &&
                        panel.appCatalog.some(function(a) { return a.id === "alpha.desktop" && a.commands.indexOf("open renamed phrase") >= 0 })) {
                 if (has("open new phrase") || !has("open renamed phrase")) { fail("rename did not refresh routed rows"); return }
-                panel.aliasRequest(["remove", "renamed phrase"])
+                panel.commandRequest(["remove", "renamed phrase"])
                 phase = 3
-            } else if (phase === 3 && !panel.aliasEntries.some(function(a) { return a.phrase === "renamed phrase" }) &&
+            } else if (phase === 3 && !panel.commandEntries.some(function(a) { return a.phrase === "renamed phrase" }) &&
                        !panel.appCatalog.some(function(a) { return a.id === "alpha.desktop" && a.commands.indexOf("open renamed phrase") >= 0 })) {
                 if (has("open renamed phrase")) { fail("removed phrase still displayed"); return }
                 panel.addingCommand = true
-                panel.aliasRequest(["set", "fail phrase", "alpha.desktop"])
+                panel.commandRequest(["set", "fail phrase", "alpha.desktop"])
                 phase = 4
-            } else if (phase === 4 && panel.aliasStatus === "Simulated write failure") {
+            } else if (phase === 4 && panel.commandStatus === "Simulated write failure") {
                 if (!panel.addingCommand || has("open fail phrase") || !has("open first phrase")) {
                     fail("failed write discarded editor or changed rows"); return
                 }
@@ -163,7 +163,7 @@ def main():
         (root / 'Plugin').symlink_to(REPO / 'plugin', target_is_directory=True)
         (root / 'shell.qml').write_text(HARNESS)
         state = root / 'state.json'
-        state.write_text('{"aliases":{"first phrase":"alpha.desktop","other phrase":"beta.desktop"}}')
+        state.write_text('{"voice_commands":{"first phrase":"alpha.desktop","other phrase":"beta.desktop"}}')
         calls = root / 'calls.jsonl'
         calls.touch()
         bin_dir = root / 'bin'
@@ -180,7 +180,7 @@ def main():
         if result.returncode or 'FAIL panel refresh' in result.stdout + result.stderr or 'PASS panel refresh' not in result.stdout + result.stderr or 'ReferenceError:' in result.stderr or 'TypeError:' in result.stderr:
             raise SystemExit('Panel refresh validation failed')
         requests = [json.loads(line) for line in calls.read_text().splitlines()]
-        if requests.count(['alias', 'list']) < 5 or requests.count(['apps']) < 5:
+        if requests.count(['voice-command', 'list']) < 5 or requests.count(['apps']) < 5:
             raise SystemExit(f'Panel did not refresh on every mutation and reopen: {requests}')
 
 

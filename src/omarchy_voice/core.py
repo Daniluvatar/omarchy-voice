@@ -175,7 +175,8 @@ ROLE_LAUNCH = {
     "browser": ["omarchy", "launch", "browser"],
     "terminal": ["omarchy", "launch", "terminal"],
 }
-APP_ALIASES = {
+#: Recognized spoken application names (spoken forms and STT-friendly synonyms) → canonical name.
+BUILTIN_APP_NAMES = {
     "brave": "brave",
     "brave browser": "brave",
     "browser": "browser",
@@ -275,7 +276,7 @@ def parse(text: str) -> Intent:
             return Intent("workspace.switch", {"number": number})
     match = re.fullmatch(r"(?:open|launch|start) (.+)", text)
     if match and APP.fullmatch(match[1]) and ".." not in match[1]:
-        application = APP_ALIASES.get(match[1], match[1])
+        application = BUILTIN_APP_NAMES.get(match[1], match[1])
         return Intent("app.launch", {"application": application})
     raise VoiceError("Command not recognized")
 
@@ -283,7 +284,7 @@ def parse(text: str) -> Intent:
 class DesktopRegistry:
     """Resolve exact installed desktop IDs or Name fields, never Exec strings."""
 
-    def __init__(self, roots=None, aliases=None):
+    def __init__(self, roots=None, voice_commands=None):
         if roots is None:
             roots = [
                 Path(os.environ.get("XDG_DATA_HOME", str(Path.home() / ".local/share")))
@@ -297,7 +298,7 @@ class DesktopRegistry:
                 if p.startswith("/")
             ]
         self.roots = [Path(p) for p in roots]
-        self.aliases = aliases or {}
+        self.voice_commands = voice_commands or {}
 
     def applications(self):
         """List visible, owner-trusted desktop entries for the UI app picker."""
@@ -332,7 +333,7 @@ class DesktopRegistry:
         return sorted(results, key=lambda app: (app["name"].lower(), app["id"].lower()))
 
     def resolve(self, name):
-        target = self.aliases.get(name, name).lower()
+        target = self.voice_commands.get(name, name).lower()
         matches = []
         seen = set()
         for root in self.roots:
@@ -377,7 +378,7 @@ class DesktopRegistry:
 class Router:
     def __init__(self, config, registry=None, runner=subprocess.run):
         self.config = config
-        self.registry = registry or DesktopRegistry(aliases=config.aliases)
+        self.registry = registry or DesktopRegistry(voice_commands=config.voice_commands)
         self.runner = runner
 
     @staticmethod
@@ -432,8 +433,8 @@ class Router:
             if type(value) is not str or not APP.fullmatch(value) or ".." in value:
                 raise VoiceError("Invalid application")
             # Unconfigured role phrases follow Omarchy's current default.
-            # A saved alias for that exact role launches the chosen desktop file.
-            if value in ROLE_LAUNCH and value not in self.config.aliases:
+            # A saved voice command for that exact role launches the chosen desktop file.
+            if value in ROLE_LAUNCH and value not in self.config.voice_commands:
                 return list(ROLE_LAUNCH[value])
             return ["gio", "launch", str(self.registry.resolve(value))]
         if a == "workspace.switch":

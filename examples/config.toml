@@ -22,7 +22,7 @@ allow = ["app.launch", "window.close", "window.move_monitor", "window.move_works
 
 # Exact installed desktop IDs; change these to match your installation.
 # Spoken "open terminal" uses `omarchy launch terminal` unless you add a
-# terminal alias here.
-[applications.aliases]
+# terminal voice command here.
+[applications.voice_commands]
 brave = "brave-browser.desktop"
 spotify = "spotify.desktop"

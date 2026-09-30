@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from .audio import PipeWireRecorder
-from .aliases import read_settings
+from .voice_commands import read_settings
 from .core import VoiceError, Router, parse
 from .feedback import show_osd
 from .log import write_log
@@ -70,8 +70,8 @@ class Controller:
         self.pending = None
         self.window_address = None
         self.action_thread = None
-        self.alias_mode = False
-        self.alias_text = ""
+        self.command_mode = False
+        self.voice_command_text = ""
 
     def _set(self, state, message):
         self.state = state
@@ -89,27 +89,27 @@ class Controller:
             result = {"state": self.state, "message": self.message}
             if self.pending:
                 result["confirmation_token"] = self.pending[1]
-            if self.state == "alias_review":
-                result["alias_text"] = self.alias_text
+            if self.state == "voice_command_review":
+                result["voice_command_text"] = self.voice_command_text
             return result
 
-    def start_alias(self):
-        return self.start(alias_mode=True)
+    def start_voice_command(self):
+        return self.start(command_mode=True)
 
-    def start(self, alias_mode=False):
+    def start(self, command_mode=False):
         with self.lock:
             self._expire()
-            if self.state not in ("idle", "error", "alias_review"):
+            if self.state not in ("idle", "error", "voice_command_review"):
                 raise VoiceError("Voice service is busy")
             self.generation += 1
             self.event = threading.Event()
             self.pending = None
-            self.alias_mode = alias_mode
-            self.alias_text = ""
+            self.command_mode = command_mode
+            self.voice_command_text = ""
             write_log("INFO", "listen-start")
             # Failure to identify focus disables close/move, not unrelated commands.
             self.window_address = None
-            if not alias_mode:
+            if not command_mode:
                 try:
                     self.window_address = self.router.capture_window()
                 except VoiceError:
@@ -159,26 +159,26 @@ class Controller:
             self._set("transcribing", "Transcribing locally")
             self.thread = threading.Thread(
                 target=self._work,
-                args=(self.generation, recorder, self.worker, audio, self.event, self.alias_mode),
+                args=(self.generation, recorder, self.worker, audio, self.event, self.command_mode),
                 daemon=True,
             )
             self.thread.start()
             return self.status()
 
-    def _work(self, generation, recorder, worker, audio, event, alias_mode=False):
+    def _work(self, generation, recorder, worker, audio, event, command_mode=False):
         try:
             try:
                 text = worker.transcribe(audio, self.config.language, event)
                 write_log("INFO", "transcribed", text=text)
             finally:
                 recorder.cleanup()
-            if alias_mode:
+            if command_mode:
                 if type(text) is not str or not text.strip() or len(text) > 512:
                     raise VoiceError("No supported speech command detected")
                 with self.lock:
                     if generation == self.generation and not event.is_set():
-                        self.alias_text = text
-                        self._set("alias_review", "Review the heard phrase; no action was run")
+                        self.voice_command_text = text
+                        self._set("voice_command_review", "Review the heard phrase; no action was run")
                 return
             intent = parse(text)
             write_log("INFO", "intent", action=intent.action, parameters=intent.parameters)
@@ -299,8 +299,8 @@ class Controller:
             self.generation += 1
             self.event.set()
             self.pending = None
-            self.alias_mode = False
-            self.alias_text = ""
+            self.command_mode = False
+            self.voice_command_text = ""
             if self.timer:
                 self.timer.cancel()
                 self.timer = None
@@ -360,6 +360,7 @@ def dispatch(controller, request):
     allowed = {
         "status": set(),
         "start": set(),
+        "start_voice_command": set(),
         "start_alias": set(),
         "stop": set(),
         "cancel": set(),
@@ -368,6 +369,8 @@ def dispatch(controller, request):
     }
     if command not in allowed or set(request) != {"command"} | allowed[command]:
         raise VoiceError("Unknown command or parameters")
+    if command == "start_alias":  # Pre-rename CLI verb; same behavior.
+        command = "start_voice_command"
     if command == "confirm":
         return controller.confirm(request["token"])
     if command == "run":
