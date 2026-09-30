@@ -38,6 +38,9 @@ Panel {
     property bool commandRefreshPending: false
     property bool appRefreshPending: false
     property bool commandsPendingApply: false
+    property bool applyChecking: false
+    property int applyProbeAttempts: 0
+    property string expectedVoiceCommandsRevision: ""
     property string commandRequestApp: ""
     property var appOptions: []
     property var appCatalog: []
@@ -255,6 +258,38 @@ Panel {
         appQuery.running = true
     }
 
+    function applyCommands() {
+        if (applyChecking || serviceRestart.running || voice.busy || commandJob.running) return
+        serviceRestart.running = true
+    }
+
+    function runApplyProbe() {
+        applyProbeAttempts++
+        applyProbe.running = true
+    }
+
+    function finishApplyProbe(data) {
+        applyChecking = false
+        if (!data) {
+            commandStatus = "Voice service restarted but did not become ready within the allowed time"
+            return
+        }
+        if (typeof data.voice_commands_revision !== "string" || data.voice_commands_revision.length === 0) {
+            commandStatus = "Voice service is ready; it did not report a configuration revision, so activation could not be verified"
+            return
+        }
+        if (expectedVoiceCommandsRevision.length === 0) {
+            commandStatus = "Voice service is ready; the expected configuration revision is unavailable, so activation could not be verified"
+            return
+        }
+        if (data.voice_commands_revision !== expectedVoiceCommandsRevision) {
+            commandStatus = "Voice service is ready but is not running the saved voice commands"
+            return
+        }
+        root.commandsPendingApply = false
+        commandStatus = "Applied: the running voice service is ready and has the saved voice commands"
+    }
+
     function showCommandsTab() {
         root.showSettings = false
     }
@@ -435,8 +470,41 @@ Panel {
         id: serviceRestart
         command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
         onExited: function(code) {
-            if (code === 0) root.commandsPendingApply = false
-            root.commandStatus = code === 0 ? "Voice service restart completed; activation has not been verified" : "Could not restart voice service"
+            if (code !== 0) {
+                root.commandStatus = "Could not restart voice service"
+                return
+            }
+            // Pending changes are cleared only after finishApplyProbe verifies
+            // the running daemon reports the matching configuration revision.
+            root.refreshCommands()
+            root.applyChecking = true
+            root.applyProbeAttempts = 0
+            root.runApplyProbe()
+        }
+    }
+    Process {
+        id: applyProbe
+        command: ["omarchy-voice", "status"]
+        stdout: StdioCollector { id: applyProbeOutput }
+        onExited: function(code) {
+            var data = null
+            try {
+                if (code === 0) data = JSON.parse(applyProbeOutput.text)
+            } catch (e) {}
+            if (data && typeof data === "object" && data !== null && typeof data.state === "string")
+                root.finishApplyProbe(data)
+            else if (root.applyProbeAttempts < 4)
+                applyProbeTimer.restart()
+            else
+                root.finishApplyProbe(null)
+        }
+    }
+    Timer {
+        id: applyProbeTimer
+        interval: 500
+        repeat: false
+        onTriggered: {
+            root.runApplyProbe()
         }
     }
     Process {
@@ -466,6 +534,8 @@ Panel {
                 }
                 root.appOptions = options
                 root.appCatalog = catalog
+                if (typeof data.voice_commands_revision === "string" && data.voice_commands_revision.length > 0)
+                    root.expectedVoiceCommandsRevision = data.voice_commands_revision
                 if (root.appChoice !== "" && !catalog.some(function(app) { return app.id === root.appChoice }))
                     root.clearAppSelection()
                 root.setCommands(function() {
@@ -852,9 +922,9 @@ Panel {
                         }
                         Button {
                             text: "Apply saved phrases (restart voice service)"
-                            enabled: !serviceRestart.running && !commandJob.running && !voice.busy &&
+                            enabled: !root.applyChecking && !serviceRestart.running && !commandJob.running && !voice.busy &&
                                      (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "voice_command_review")
-                            onClicked: serviceRestart.running = true
+                            onClicked: root.applyCommands()
                         }
                         Text {
                             width: parent.width

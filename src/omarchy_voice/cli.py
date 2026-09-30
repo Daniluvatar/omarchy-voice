@@ -9,7 +9,7 @@ import signal
 import sys
 import threading
 import wave
-from .voice_commands import read_settings, read_voice_commands, remove_voice_command, set_keybind_osd, set_voice_command, update_voice_command
+from .voice_commands import read_settings, read_voice_commands, remove_voice_command, set_keybind_osd, set_voice_command, update_voice_command, voice_commands_revision
 from .config import load_config, set_stt, stt_options, stt_snapshot
 from .core import BUILTIN_APP_NAMES, DesktopRegistry, ROLE_LAUNCH, VoiceError, Router, default_browser_desktop_id, parse
 from .log import log_path
@@ -225,7 +225,12 @@ def main(argv=None):
                 ],
             }
         elif command == "apps":
-            result = {"state": "idle", "message": "Installed applications", "apps": app_catalog(config)}
+            result = {
+                "state": "idle",
+                "message": "Installed applications",
+                "apps": app_catalog(config),
+                "voice_commands_revision": voice_commands_revision(config.voice_commands),
+            }
         elif command == "doctor":
             checks = {
                 name: shutil.which(name) is not None

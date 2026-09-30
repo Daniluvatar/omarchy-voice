@@ -5,6 +5,7 @@ New saves go to ``voice_commands.json``; pre-rename saves in ``aliases.json``
 are migrated once into that file and then left untouched as a backup.
 """
 
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -124,6 +125,12 @@ def _save(voice_commands):
     finally:
         if temporary is not None:
             temporary.unlink(missing_ok=True)
+
+
+def voice_commands_revision(voice_commands):
+    """Deterministic 16-hex digest of the stored mapping; never the contents."""
+    payload = json.dumps(voice_commands, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()[:16]
 
 
 def _phrase_text(phrase):
