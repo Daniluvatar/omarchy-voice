@@ -9,6 +9,7 @@ import pytest
 from omarchy_voice.config import Config
 from omarchy_voice.core import Router, VoiceError, parse
 from omarchy_voice.service import Server, request
+from omarchy_voice.voice_commands import voice_commands_revision
 from test_core import controller, wait
 from test_security import short_runtime
 
@@ -151,7 +152,10 @@ def test_async_action_failure_visible_and_recoverable(tmp_path):
     c.router.execute = broken
     assert c.run("mute")["state"] == "executing"
     wait(c)
-    assert c.status() == {"state": "error", "message": "Desktop action failed"}
+    assert c.status() == {
+        "state": "error", "message": "Desktop action failed",
+        "voice_commands_revision": voice_commands_revision(c.config.voice_commands),
+    }
     assert c.cancel()["state"] == "idle"
     c.close()
 

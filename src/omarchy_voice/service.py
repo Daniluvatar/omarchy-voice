@@ -12,7 +12,7 @@ import subprocess
 import threading
 import time
 from .audio import PipeWireRecorder
-from .voice_commands import read_settings
+from .voice_commands import read_settings, voice_commands_revision
 from .core import VoiceError, Router, parse
 from .feedback import show_osd
 from .log import write_log
@@ -86,7 +86,8 @@ class Controller:
     def status(self):
         with self.lock:
             self._expire()
-            result = {"state": self.state, "message": self.message}
+            result = {"state": self.state, "message": self.message,
+                      "voice_commands_revision": voice_commands_revision(self.config.voice_commands)}
             if self.pending:
                 result["confirmation_token"] = self.pending[1]
             if self.state == "voice_command_review":

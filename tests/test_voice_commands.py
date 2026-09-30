@@ -5,7 +5,7 @@ import time
 
 import pytest
 
-from omarchy_voice.voice_commands import read_voice_commands, remove_voice_command, set_voice_command, update_voice_command
+from omarchy_voice.voice_commands import read_voice_commands, remove_voice_command, set_voice_command, update_voice_command, voice_commands_revision
 from omarchy_voice.cli import main
 from omarchy_voice.config import Config, load_config
 from omarchy_voice.core import DesktopRegistry, Router, VoiceError, parse
@@ -325,6 +325,7 @@ def test_voice_command_recording_never_executes(tmp_path):
         assert controller.status() == {
             "state": "voice_command_review", "message": "Review the heard phrase; no action was run",
             "voice_command_text": "Open is putty high.",
+            "voice_commands_revision": voice_commands_revision(config.voice_commands),
         }
         assert not actions and not audio.exists()
         controller.cancel()
@@ -376,3 +377,44 @@ def test_stt_settings_cli_writes_config(apps, tmp_path, capsys):
     assert 'model = "base.en"' in config_path.read_text()
     assert main(["settings", "stt", "provider", "whisper.cpp"]) == 1
     assert "Unsupported STT provider" in capsys.readouterr().out
+
+
+def test_voice_commands_revision_is_deterministic_digest(apps):
+    import re
+
+    mapping = {"some phrase": "alpha.desktop", "other phrase": "beta.desktop"}
+    revision = voice_commands_revision(mapping)
+    assert revision == voice_commands_revision({"other phrase": "beta.desktop", "some phrase": "alpha.desktop"})
+    assert revision == voice_commands_revision(dict(reversed(list(mapping.items()))))
+    assert re.fullmatch(r"[0-9a-f]{16}", revision)
+    # The digest must not expose the spoken phrases or desktop ids themselves.
+    for secret in mapping:
+        assert secret not in revision
+        assert mapping[secret] not in revision
+    assert revision != voice_commands_revision({"some phrase": "gamma.desktop", "other phrase": "beta.desktop"})
+    assert revision != voice_commands_revision({})
+
+
+def test_status_reports_loaded_revision_and_detects_change(apps):
+    config = load_config()
+    controller = Controller(config)
+    try:
+        status = controller.status()
+        assert status["voice_commands_revision"] == voice_commands_revision(config.voice_commands)
+        # The already-running daemon keeps its loaded revision; a fresh load diverges.
+        set_voice_command("fresh phrase", "Spotify", config)
+        fresh = load_config()
+        assert voice_commands_revision(fresh.voice_commands) != status["voice_commands_revision"]
+    finally:
+        controller.close()
+
+
+def test_apps_cli_exposes_expected_revision(apps, capsys):
+    expected = voice_commands_revision(load_config().voice_commands)
+    assert main(["apps"]) == 0
+    first = json.loads(capsys.readouterr().out)["voice_commands_revision"]
+    assert first == expected
+    set_voice_command("fresh phrase", "Spotify", load_config())
+    assert main(["apps"]) == 0
+    second = json.loads(capsys.readouterr().out)["voice_commands_revision"]
+    assert second != first
