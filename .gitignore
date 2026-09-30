@@ -10,3 +10,4 @@ dist/
 htmlcov/
 *.wav
 models/
+tmp_agent_prompt/
