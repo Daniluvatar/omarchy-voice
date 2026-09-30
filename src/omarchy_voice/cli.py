@@ -9,9 +9,9 @@ import signal
 import sys
 import threading
 import wave
-from .aliases import read_aliases, read_settings, remove_alias, set_alias, set_keybind_osd, update_alias
+from .voice_commands import read_settings, read_voice_commands, remove_voice_command, set_keybind_osd, set_voice_command, update_voice_command
 from .config import load_config, set_stt, stt_options, stt_snapshot
-from .core import APP_ALIASES, DesktopRegistry, ROLE_LAUNCH, VoiceError, Router, default_browser_desktop_id, parse
+from .core import BUILTIN_APP_NAMES, DesktopRegistry, ROLE_LAUNCH, VoiceError, Router, default_browser_desktop_id, parse
 from .log import log_path
 from .providers import FasterWhisper, IsolatedSTT, download_model
 from .service import Controller, Server, request, runtime_dir
@@ -24,7 +24,8 @@ def parser():
     for command in (
         "serve",
         "start",
-        "start-alias",
+        "start-voice-command",
+        "start-alias",  # Pre-rename CLI verb; same behavior as start-voice-command.
         "stop",
         "cancel",
         "status",
@@ -45,18 +46,22 @@ def parser():
     sp = sub.add_parser("transcribe")
     sp.add_argument("file", type=Path)
     sp.add_argument("--execute", action="store_true")
-    alias = sub.add_parser("alias")
-    alias_commands = alias.add_subparsers(dest="alias_command", required=True)
-    alias_commands.add_parser("list")
-    add = alias_commands.add_parser("set")
-    add.add_argument("phrase")
-    add.add_argument("application")
-    update = alias_commands.add_parser("update")
-    update.add_argument("old_phrase")
-    update.add_argument("new_phrase")
-    update.add_argument("application")
-    remove = alias_commands.add_parser("remove")
-    remove.add_argument("phrase")
+    for group in ("voice-command", "alias"):
+        group_parser = sub.add_parser(
+            group,
+            help="Manage saved voice commands (the alias subcommand is a compatibility name)",
+        )
+        group_commands = group_parser.add_subparsers(dest="command_operation", required=True)
+        group_commands.add_parser("list")
+        add = group_commands.add_parser("set")
+        add.add_argument("phrase")
+        add.add_argument("application")
+        update = group_commands.add_parser("update")
+        update.add_argument("old_phrase")
+        update.add_argument("new_phrase")
+        update.add_argument("application")
+        remove = group_commands.add_parser("remove")
+        remove.add_argument("phrase")
     settings = sub.add_parser("settings")
     settings_commands = settings.add_subparsers(dest="settings_command", required=True)
     settings_commands.add_parser("show")
@@ -82,15 +87,15 @@ def dry_run(text, config):
 
 def app_catalog(config, default_browser=None):
     """Show only installed apps and launch phrases that the router can plan."""
-    registry = DesktopRegistry(aliases=config.aliases)
+    registry = DesktopRegistry(voice_commands=config.voice_commands)
     apps = registry.applications()
     by_id = {app["id"]: app for app in apps}
     for app in apps:
         app["commands"] = []
     router = Router(config, registry=registry)
-    if default_browser is None and "browser" not in config.aliases:
+    if default_browser is None and "browser" not in config.voice_commands:
         default_browser = default_browser_desktop_id()
-    for name in sorted(set(APP_ALIASES) | set(config.aliases)):
+    for name in sorted(set(BUILTIN_APP_NAMES) | set(config.voice_commands)):
         phrase = "open " + name
         try:
             argv = router.plan(parse(phrase))
@@ -145,20 +150,23 @@ def main(argv=None):
             signal.signal(signal.SIGINT, shutdown)
             server.serve()
             return 0
-        if command in ("start", "start-alias", "stop", "cancel", "status"):
+        if command in ("start", "start-alias", "start-voice-command", "stop", "cancel", "status"):
+            if command == "start-alias":
+                command = "start-voice-command"
             result = request(command.replace("-", "_"))
-        elif command == "alias":
-            if args.alias_command == "list":
-                result = {"state": "idle", "message": "Configured spoken aliases", "aliases": read_aliases()}
-            elif args.alias_command == "set":
-                phrase, desktop_id = set_alias(args.phrase, args.application, config)
-                result = {"state": "idle", "message": "Alias saved; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
-            elif args.alias_command == "update":
-                phrase, desktop_id = update_alias(args.old_phrase, args.new_phrase, args.application, config)
-                result = {"state": "idle", "message": "Alias updated; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
+        elif command in ("alias", "voice-command"):
+            operation = args.command_operation
+            if operation == "list":
+                result = {"state": "idle", "message": "Configured voice commands", "voice_commands": read_voice_commands()}
+            elif operation == "set":
+                phrase, desktop_id = set_voice_command(args.phrase, args.application, config)
+                result = {"state": "idle", "message": "Voice command saved; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
+            elif operation == "update":
+                phrase, desktop_id = update_voice_command(args.old_phrase, args.new_phrase, args.application, config)
+                result = {"state": "idle", "message": "Voice command updated; restart voice service to apply", "phrase": phrase, "desktop_id": desktop_id}
             else:
-                phrase = remove_alias(args.phrase)
-                result = {"state": "idle", "message": "Alias removed; restart voice service to apply", "phrase": phrase}
+                phrase = remove_voice_command(args.phrase)
+                result = {"state": "idle", "message": "Voice command removed; restart voice service to apply", "phrase": phrase}
         elif command == "settings":
             if args.settings_command == "show":
                 result = {

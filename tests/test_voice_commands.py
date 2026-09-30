@@ -1,11 +1,11 @@
-"""Exact alias enrollment and no-execution recording regressions."""
+"""Voice command enrollment, compatibility migration, and no-execution recording regressions."""
 
 import json
 import time
 
 import pytest
 
-from omarchy_voice.aliases import read_aliases, remove_alias, set_alias, update_alias
+from omarchy_voice.voice_commands import read_voice_commands, remove_voice_command, set_voice_command, update_voice_command
 from omarchy_voice.cli import main
 from omarchy_voice.config import Config, load_config
 from omarchy_voice.core import DesktopRegistry, Router, VoiceError, parse
@@ -25,73 +25,163 @@ def apps(tmp_path, monkeypatch):
     return directory / "spotify.desktop"
 
 
-def test_exact_spoken_alias_survives_reload(apps):
+def test_exact_spoken_phrase_survives_reload(apps):
     config = load_config()
-    assert set_alias("Open is putty high.", "Spotify", config) == ("is putty high", "spotify.desktop")
-    assert set_alias("music app", "Spotify", config) == ("music app", "spotify.desktop")
-    assert read_aliases() == {"is putty high": "spotify.desktop", "music app": "spotify.desktop"}
+    assert set_voice_command("Open is putty high.", "Spotify", config) == ("is putty high", "spotify.desktop")
+    assert set_voice_command("music app", "Spotify", config) == ("music app", "spotify.desktop")
+    assert read_voice_commands() == {"is putty high": "spotify.desktop", "music app": "spotify.desktop"}
     reloaded = load_config()
     for command in ("open is putty high", "open music app"):
         assert Router(reloaded).plan(parse(command)) == ["gio", "launch", str(apps)]
     with pytest.raises(VoiceError, match="not permitted"):
-        Router(Config(aliases=reloaded.aliases, permissions=())).plan(parse("open music app"))
-    remove_alias("music app")
+        Router(Config(voice_commands=reloaded.voice_commands, permissions=())).plan(parse("open music app"))
+    remove_voice_command("music app")
     with pytest.raises(VoiceError, match="unavailable or ambiguous"):
         Router(load_config()).plan(parse("open music app"))
 
 
-def test_alias_validation_and_file_safety(apps, tmp_path):
+def test_voice_command_validation_and_file_safety(apps, tmp_path):
     config = load_config()
     for phrase in ("open music app; mute", "open music app && mute", "open ../spotify"):
         with pytest.raises(VoiceError):
-            set_alias(phrase, "Spotify", config)
+            set_voice_command(phrase, "Spotify", config)
     with pytest.raises(VoiceError, match="unavailable or ambiguous"):
-        set_alias("music app", "Spotify then mute", config)
-    path = tmp_path / "config" / "omarchy-voice" / "aliases.json"
+        set_voice_command("music app", "Spotify then mute", config)
+    path = tmp_path / "config" / "omarchy-voice" / "voice_commands.json"
     path.symlink_to(tmp_path / "target")
-    with pytest.raises(VoiceError, match="Unsafe alias file"):
-        set_alias("music app", "Spotify", config)
+    with pytest.raises(VoiceError, match="Unsafe voice command file"):
+        set_voice_command("music app", "Spotify", config)
     path.unlink()
     path.write_text('{"music app": "spotify.desktop"}')
     path.chmod(0o666)
-    with pytest.raises(VoiceError, match="Unsafe alias file"):
-        read_aliases()
+    with pytest.raises(VoiceError, match="Unsafe voice command file"):
+        read_voice_commands()
 
 
-def test_alias_cli_json_and_no_execution(apps, capsys):
+def test_voice_command_cli_json_and_no_execution(apps, capsys):
     assert main(["apps"]) == 0
     listed = json.loads(capsys.readouterr().out)["apps"]
     assert any(app["id"] == "spotify.desktop" and app["name"] == "Spotify" and app.get("icon") for app in listed)
     assert "open spotify" in listed[0]["commands"]
-    assert main(["alias", "set", "open music app", "Spotify"]) == 0
+    assert main(["voice-command", "set", "open music app", "Spotify"]) == 0
     assert json.loads(capsys.readouterr().out)["desktop_id"] == "spotify.desktop"
     assert main(["apps"]) == 0
     listed = json.loads(capsys.readouterr().out)["apps"]
     assert "open music app" in listed[0]["commands"]
-    assert main(["alias", "list"]) == 0
-    assert json.loads(capsys.readouterr().out)["aliases"] == {"music app": "spotify.desktop"}
+    assert main(["voice-command", "list"]) == 0
+    assert json.loads(capsys.readouterr().out)["voice_commands"] == {"music app": "spotify.desktop"}
     assert main(["run", "open music app"]) == 0
     assert json.loads(capsys.readouterr().out)["argv"] == ["gio", "launch", str(apps)]
-    assert main(["alias", "remove", "music app"]) == 0
+    assert main(["voice-command", "remove", "music app"]) == 0
     assert json.loads(capsys.readouterr().out)["phrase"] == "music app"
 
 
-def test_update_alias_replaces_phrase_atomically(apps, capsys):
+def test_legacy_alias_cli_still_works(apps, capsys):
+    """The pre-rename `alias` subcommand remains a working compatibility name."""
+    assert main(["alias", "set", "open music app", "Spotify"]) == 0
+    assert json.loads(capsys.readouterr().out)["desktop_id"] == "spotify.desktop"
+    assert main(["alias", "list"]) == 0
+    listed = json.loads(capsys.readouterr().out)
+    assert listed["voice_commands"] == {"music app": "spotify.desktop"}
+    assert main(["alias", "remove", "music app"]) == 0
+    assert json.loads(capsys.readouterr().out)["phrase"] == "music app"
+    assert main(["voice-command", "list"]) == 0
+    assert json.loads(capsys.readouterr().out)["voice_commands"] == {}
+
+
+def test_legacy_store_file_migrates_once_and_never_resurrects(apps, tmp_path):
+    """Pre-rename saves in aliases.json move to voice_commands.json exactly once."""
+    config_dir = tmp_path / "config" / "omarchy-voice"
+    config_dir.mkdir(parents=True)
+    legacy = config_dir / "aliases.json"
+    legacy.write_text('{"is putty high": "spotify.desktop", "music app": "spotify.desktop"}')
+    legacy.chmod(0o600)
+
+    assert read_voice_commands() == {"is putty high": "spotify.desktop", "music app": "spotify.desktop"}
+    canonical = config_dir / "voice_commands.json"
+    assert canonical.read_text().find("spotify.desktop") >= 0
+    # The legacy file is preserved untouched as a backup.
+    assert json.loads(legacy.read_text()) == {"is putty high": "spotify.desktop", "music app": "spotify.desktop"}
+
+    remove_voice_command("music app")
+    assert json.loads(canonical.read_text()) == {"is putty high": "spotify.desktop"}
+    # Removal must not resurrect from the untouched legacy file.
+    assert read_voice_commands() == {"is putty high": "spotify.desktop"}
+    assert Router(load_config()).plan(parse("open is putty high")) == ["gio", "launch", str(apps)]
+    with pytest.raises(VoiceError, match="unavailable or ambiguous"):
+        Router(load_config()).plan(parse("open music app"))
+
+
+def test_valid_legacy_commands_survive_migration_write_failure(apps, tmp_path):
+    """A failed canonical write must not make saved legacy commands disappear."""
+    config_dir = tmp_path / "config" / "omarchy-voice"
+    config_dir.mkdir(parents=True)
+    legacy = config_dir / "aliases.json"
+    legacy.write_text('{"music app": "spotify.desktop"}')
+    legacy.chmod(0o600)
+
+    # Read-only store directory: the canonical file cannot be created.
+    config_dir.chmod(0o555)
+    try:
+        assert read_voice_commands() == {"music app": "spotify.desktop"}
+        # The failed migration created no canonical file and touched no legacy data.
+        assert not (config_dir / "voice_commands.json").exists()
+        assert json.loads(legacy.read_text()) == {"music app": "spotify.desktop"}
+        # The command still routes for this read even though it was not migrated.
+        assert Router(load_config()).plan(parse("open music app")) == ["gio", "launch", str(apps)]
+    finally:
+        config_dir.chmod(0o700)
+
+    # Once writes work again, the same data migrates into the canonical store.
+    assert read_voice_commands() == {"music app": "spotify.desktop"}
+    canonical = config_dir / "voice_commands.json"
+    assert json.loads(canonical.read_text()) == {"music app": "spotify.desktop"}
+    assert read_voice_commands() == {"music app": "spotify.desktop"}
+
+
+def test_voice_commands_from_legacy_toml_key(apps, tmp_path):
+    config_dir = tmp_path / "config" / "omarchy-voice"
+    config_dir.mkdir(parents=True)
+    (config_dir / "config.toml").write_text('[applications.aliases]\nmusic = "spotify.desktop"\n')
+    assert load_config().voice_commands["music"] == "spotify.desktop"
+
+
+def test_voice_commands_new_toml_key_wins_and_rewrites(apps, tmp_path, capsys):
+    config_dir = tmp_path / "config" / "omarchy-voice"
+    config_dir.mkdir(parents=True)
+    config_path = config_dir / "config.toml"
+    config_path.write_text(
+        '[applications.aliases]\nmusic = "spotify.desktop"\n\n'
+        '[applications.voice_commands]\nmusic = "other-app.desktop"\n'
+    )
     config = load_config()
-    set_alias("open music app", "Spotify", config)
-    set_alias("open spotify", "Spotify", config)
-    assert main(["alias", "update", "music app", "open favorite music", "spotify.desktop"]) == 0
+    assert config.voice_commands == {"music": "other-app.desktop"}
+    # set_stt round-trips the section and emits only the current table name.
+    assert main(["settings", "stt", "model", "base.en"]) == 0
+    json.loads(capsys.readouterr().out)
+    text = config_path.read_text()
+    assert "[applications.voice_commands]" in text
+    assert "[applications.aliases]" not in text
+    assert 'music = "other-app.desktop"' in text
+    assert "spotify.desktop" not in text
+
+
+def test_update_voice_command_replaces_phrase_atomically(apps, capsys):
+    config = load_config()
+    set_voice_command("open music app", "Spotify", config)
+    set_voice_command("open spotify", "Spotify", config)
+    assert main(["voice-command", "update", "music app", "open favorite music", "spotify.desktop"]) == 0
     result = json.loads(capsys.readouterr().out)
     assert result["phrase"] == "favorite music"
-    assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
+    assert read_voice_commands() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
     assert Router(load_config()).plan(parse("open favorite music")) == ["gio", "launch", str(apps)]
     with pytest.raises(VoiceError, match="unavailable or ambiguous"):
         Router(load_config()).plan(parse("open music app"))
     for old, new in (("favorite music", "spotify"), ("missing", "another"),
                      ("favorite music", "open music app; mute")):
         with pytest.raises(VoiceError):
-            update_alias(old, new, "spotify.desktop", load_config())
-        assert read_aliases() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
+            update_voice_command(old, new, "spotify.desktop", load_config())
+        assert read_voice_commands() == {"favorite music": "spotify.desktop", "spotify": "spotify.desktop"}
 
 
 def test_taken_phrase_cannot_move_another_apps_commands(apps, capsys):
@@ -110,23 +200,23 @@ def test_taken_phrase_cannot_move_another_apps_commands(apps, capsys):
     assert Router(config).plan(parse("open browser")) == ["omarchy", "launch", "browser"]
     for phrase in ("open chromium", "chromium", "open brave", "open brave browser"):
         with pytest.raises(VoiceError, match="already taken"):
-            set_alias(phrase, "spotify.desktop", config)
-        assert read_aliases() == {}
-    assert set_alias("open browser", "chromium.desktop", config) == ("browser", "chromium.desktop")
+            set_voice_command(phrase, "spotify.desktop", config)
+        assert read_voice_commands() == {}
+    assert set_voice_command("open browser", "chromium.desktop", config) == ("browser", "chromium.desktop")
     pinned = load_config()
     assert Router(pinned).plan(parse("open browser")) == ["gio", "launch", str(chromium)]
     assert Router(pinned).plan(parse("open brave")) == ["gio", "launch", str(brave)]
     assert Router(pinned).plan(parse("open chromium")) == ["gio", "launch", str(chromium)]
-    assert main(["alias", "set", "open chromium", "brave-browser.desktop"]) == 1
+    assert main(["voice-command", "set", "open chromium", "brave-browser.desktop"]) == 1
     assert "already taken" in json.loads(capsys.readouterr().out)["message"]
-    assert read_aliases() == {"browser": "chromium.desktop"}
+    assert read_voice_commands() == {"browser": "chromium.desktop"}
 
 
-def test_update_alias_keeps_old_phrase_when_target_is_invalid(apps):
-    set_alias("music app", "Spotify", load_config())
+def test_update_voice_command_keeps_old_phrase_when_target_is_invalid(apps):
+    set_voice_command("music app", "Spotify", load_config())
     with pytest.raises(VoiceError):
-        update_alias("music app", "new music", "missing.desktop", load_config())
-    assert read_aliases() == {"music app": "spotify.desktop"}
+        update_voice_command("music app", "new music", "missing.desktop", load_config())
+    assert read_voice_commands() == {"music app": "spotify.desktop"}
 
 def test_app_command_catalog_only_lists_valid_routes(apps, capsys, monkeypatch):
     (apps.parent / "brave-browser.desktop").write_text(
@@ -157,7 +247,7 @@ def test_app_command_catalog_only_lists_valid_routes(apps, capsys, monkeypatch):
     assert not any(denied.values())
     # An explicit saved browser phrase overrides only that role.
     conflicted = {app["id"]: app["commands"] for app in app_catalog(
-        Config(aliases={"brave": "brave-browser.desktop", "spotify": "spotify.desktop",
+        Config(voice_commands={"brave": "brave-browser.desktop", "spotify": "spotify.desktop",
                         "browser": "spotify.desktop"}),
         default_browser="brave-browser.desktop",
     )}
@@ -199,7 +289,7 @@ def test_app_picker_excludes_hidden_and_untrusted_entries(apps, tmp_path, monkey
     assert listed["spotify.desktop"]["icon"] == str(icons / "spotify-client.png")
 
 
-def test_alias_recording_never_executes(tmp_path):
+def test_voice_command_recording_never_executes(tmp_path):
     audio = tmp_path / "recording.wav"
     actions = []
 
@@ -226,32 +316,43 @@ def test_alias_recording_never_executes(tmp_path):
         router=Router(config, runner=lambda *a, **k: actions.append(a)),
     )
     try:
-        assert dispatch(controller, {"command": "start_alias"})["state"] == "listening"
+        assert dispatch(controller, {"command": "start_voice_command"})["state"] == "listening"
         dispatch(controller, {"command": "stop"})
         for _ in range(100):
             if controller.status()["state"] != "transcribing":
                 break
             time.sleep(0.01)
         assert controller.status() == {
-            "state": "alias_review", "message": "Review the heard phrase; no action was run",
-            "alias_text": "Open is putty high.",
+            "state": "voice_command_review", "message": "Review the heard phrase; no action was run",
+            "voice_command_text": "Open is putty high.",
         }
         assert not actions and not audio.exists()
         controller.cancel()
-        assert "alias_text" not in controller.status()
+        assert "voice_command_text" not in controller.status()
     finally:
         controller.close()
 
 
-def test_alias_ipc_parameters_rejected(tmp_path):
+def test_legacy_start_alias_command_still_dispatched(tmp_path):
     controller = Controller(Config())
+    try:
+        assert dispatch(controller, {"command": "start_alias"})["state"] == "listening"
+        controller.cancel()
+    finally:
+        controller.close()
+
+
+def test_voice_command_ipc_parameters_rejected(tmp_path):
+    controller = Controller(Config())
+    with pytest.raises(VoiceError, match="Unknown command"):
+        dispatch(controller, {"command": "start_voice_command", "application": "spotify"})
     with pytest.raises(VoiceError, match="Unknown command"):
         dispatch(controller, {"command": "start_alias", "application": "spotify"})
     controller.close()
 
 
 def test_keybind_osd_defaults_on_and_toggles(apps, tmp_path):
-    from omarchy_voice.aliases import read_settings, set_keybind_osd
+    from omarchy_voice.voice_commands import read_settings, set_keybind_osd
 
     assert read_settings() == {"keybind_osd": True}
     assert set_keybind_osd(False) is False

@@ -7,8 +7,8 @@ Item {
     property string voiceState: "idle"
     property string message: "Connecting to local voice service…"
     property string confirmationToken: ""
-    property string aliasText: ""
-    property bool aliasRecording: false
+    property string voiceCommandText: ""
+    property bool voiceCommandRecording: false
     property string providerInfo: "Local faster-whisper; querying capabilities…"
     property bool available: false
     property bool pollingEnabled: true
@@ -18,43 +18,43 @@ Item {
     property bool providersPending: true
     property bool timedOut: false
     signal confirmationRequested()
-    signal aliasHeard(string text)
+    signal voiceCommandHeard(string text)
 
     function fail(text) {
         available = false
         voiceState = "error"
         message = text
         confirmationToken = ""
-        aliasRecording = false
+        voiceCommandRecording = false
     }
     function acceptStatus(data) {
-        var states = ["idle", "listening", "transcribing", "executing", "confirmation", "alias_review", "error"]
+        var states = ["idle", "listening", "transcribing", "executing", "confirmation", "voice_command_review", "error"]
         if (!data || states.indexOf(data.state) < 0 || typeof data.message !== "string")
             throw new Error("Invalid status response")
-        if (data.state === "alias_review" && (typeof data.alias_text !== "string" || data.alias_text.length > 512))
-            throw new Error("Invalid alias transcript")
+        if (data.state === "voice_command_review" && (typeof data.voice_command_text !== "string" || data.voice_command_text.length > 512))
+            throw new Error("Invalid voice command transcript")
         var token = data.state === "confirmation" && typeof data.confirmation_token === "string" ? data.confirmation_token : ""
         var fresh = token !== "" && token !== confirmationToken
-        var newAlias = data.state === "alias_review" && typeof data.alias_text === "string" &&
-                       (voiceState !== "alias_review" || aliasText !== data.alias_text)
+        var newCommand = data.state === "voice_command_review" && typeof data.voice_command_text === "string" &&
+                       (voiceState !== "voice_command_review" || voiceCommandText !== data.voice_command_text)
         // Each monitor polls the same daemon. Only the widget that began this
         // recording may reopen its panel with the reviewed phrase.
-        var localAliasReview = newAlias && aliasRecording
+        var localCommandReview = newCommand && voiceCommandRecording
         voiceState = data.state
         message = data.message
         confirmationToken = token
-        aliasText = data.state === "alias_review" && typeof data.alias_text === "string" ? data.alias_text : ""
-        if (data.state !== "listening" && data.state !== "transcribing") aliasRecording = false
+        voiceCommandText = data.state === "voice_command_review" && typeof data.voice_command_text === "string" ? data.voice_command_text : ""
+        if (data.state !== "listening" && data.state !== "transcribing") voiceCommandRecording = false
         available = true
         if (fresh) confirmationRequested()
-        if (localAliasReview) aliasHeard(aliasText)
+        if (localCommandReview) voiceCommandHeard(voiceCommandText)
     }
     function action(verb, token) {
-        if (["start", "start-alias", "stop", "cancel", "confirm"].indexOf(verb) < 0 || pendingAction.length > 0) return
+        if (["start", "start-voice-command", "stop", "cancel", "confirm"].indexOf(verb) < 0 || pendingAction.length > 0) return
         if (verb === "confirm" && (!token || token !== confirmationToken || voiceState !== "confirmation")) return
         pendingAction = verb === "confirm" ? [verb, token] : [verb]
-        if (verb === "start-alias") aliasRecording = true
-        if (verb === "cancel" || verb === "start") aliasRecording = false
+        if (verb === "start-voice-command") voiceCommandRecording = true
+        if (verb === "cancel" || verb === "start") voiceCommandRecording = false
         // Remove authorization immediately to prevent duplicate clicks.
         if (verb === "confirm" || verb === "cancel") confirmationToken = ""
         pump()

@@ -8,6 +8,7 @@ build/
 dist/
 .coverage
 htmlcov/
+tmp*/
 *.wav
 models/
 tmp_agent_prompt/

@@ -317,6 +317,7 @@ def test_config_example():
         "[audio]\nmax_seconds=nan",
         "[notifications]\nenabled=1",
         '[applications.aliases]\nbrave="/bin/sh"',
+        '[applications.voice_commands]\nbrave="/bin/sh"',
         '[permissions]\nallow="audio.mute"',
     ],
 )

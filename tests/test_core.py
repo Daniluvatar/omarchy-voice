@@ -108,16 +108,16 @@ def test_router_strict():
 def test_open_terminal_uses_omarchy_default():
     router = Router(Config(), runner=lambda *a, **k: pytest.fail("executed"))
     assert router.plan(parse("open terminal")) == ["omarchy", "launch", "terminal"]
-    aliased = Router(
-        Config(aliases={"terminal": "foot.desktop"}),
+    configured = Router(
+        Config(voice_commands={"terminal": "foot.desktop"}),
         registry=DesktopRegistry([], {"terminal": "foot.desktop"}),
         runner=lambda *a, **k: pytest.fail("executed"),
     )
     with pytest.raises(VoiceError):
-        aliased.plan(parse("open terminal"))
+        configured.plan(parse("open terminal"))
 
 @pytest.mark.parametrize("text", ["open a Spotify", "open and Spotify", "open is Spotify"])
-def test_spotify_mishears_need_explicit_alias(text, tmp_path):
+def test_spotify_mishears_need_explicit_voice_command(text, tmp_path):
     desktop = tmp_path / "spotify.desktop"
     desktop.write_text("[Desktop Entry]\nType=Application\nName=Spotify\nExec=spotify\n")
     router = Router(

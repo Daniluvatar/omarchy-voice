@@ -114,7 +114,7 @@ Approval is disabled immediately after clicking and when the token disappears.
 Only local **faster-whisper** is implemented. The local badge describes audio
 transcription, not a network firewall: initial model downloads need network
 access, and authorized actions can launch networked apps. The frontend does not
-persist audio and renders backend text as plain text. Explicitly approved alias
+persist audio and renders backend text as plain text. Explicitly approved voice-command
 text is saved in the user configuration; ordinary transcripts remain in the
 local backend diagnostic log. Inspect its retention and permission policy
 independently.
@@ -127,22 +127,23 @@ panel phrases. Click **New command** to reveal the **Voice phrase** choice
 a phrase instead. The only app action is **Open application**; closing an app is
 not supported, and closing a window still requires the distinct confirmation
 workflow. The audio is deleted; reviewed phrase-to-desktop-ID mappings are
-stored in `$XDG_CONFIG_HOME/omarchy-voice/aliases.json` and only become active
+stored in `$XDG_CONFIG_HOME/omarchy-voice/voice_commands.json` (a pre-rename `aliases.json`
+store is migrated into it once and never re-applied) and only become active
 after an explicit service restart via **Apply saved phrases** (or
 `systemctl --user restart omarchy-voice.service`). With the app-scope backend
 fix installed, voice-launched apps survived a live restart; see issue #4 for
-verification details. Each saved command has a pencil (✎) on the right: clicking it scrolls to the shared editor below the list and focuses/selects the existing phrase for replacement (stored atomically, without overwriting a different saved phrase). The row itself is not editable. A remove (×) icon switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML alias, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
+verification details. Each saved command has a pencil (✎) on the right: clicking it scrolls to the shared editor below the list and focuses/selects the existing phrase for replacement (stored atomically, without overwriting a different saved phrase). The row itself is not editable. A remove (×) icon switches to confirm (✓) with a cancel (↶) icon. Built-in and TOML commands have no edit/remove icons; to change a TOML voice command, edit its configuration instead. Earlier Spotify-specific hard-coded mishear phrases were removed; explicitly enroll an exact phrase if transcription requires one. These controls manage
 only the panel's mappings. **open browser** follows the OS default browser until that exact phrase is saved. **open brave** and **open chromium** stay bound to those installed apps and cannot be moved onto each other. This is exact matching,
 not STT model training or fuzzy launch. The existing diagnostic log still
 contains local transcriptions.
 
-On opening the panel, the saved alias list and installed-app routes are
+On opening the panel, the saved voice-command list and installed-app routes are
 refreshed; a refresh requested while a CLI operation is running is queued.
 Successful saves/updates/removals reread both sources. The current app selection
 is kept across a popup reopen if it still exists, but changing to Desktop,
 searching away from it or losing that app on refresh clears its detail and
 unfinished editor. Switching directly to another app resets the form. Failed
-alias writes leave the saved rows and editor intact. The displayed rows are
+voice-command writes leave the saved rows and editor intact. The displayed rows are
 disk configuration, not proof of which phrases the running daemon has loaded.
 Changes made in this panel instance show a pending-Apply notice until a
 successful restart command; that exit code alone does not verify activation.
@@ -175,7 +176,7 @@ allow = []
 
 v0.1 has **no live configuration API for general settings**, model downloader UI,
 microphone chooser, waveform, or in-panel permissions editor. The panel does
-have a provider selector and reviewed app-alias enrollment and
+have a provider selector and reviewed voice-command enrollment and
 removal; it does not change action permissions. Save the file, cancel any
 capture, then run
 `systemctl --user restart omarchy-voice.service`. Recreate/reload the widget to
@@ -208,9 +209,9 @@ Live acceptance still requires explicit user testing: install, ensure microphone
 permission and local model availability, hold/release the shortcut, inspect
 listening → transcribing → executing/idle, deny/approve a harmless test request,
 check expiry/error recovery, and verify popup focus/placement on each monitor.
-For aliases, record a Spotify example without executing, review the heard text,
-save it, click **Apply saved phrases** only after protecting work in voice-launched apps, then speak the alias and confirm the actual app
-appears. No live alias enrollment, model inference or disruptive action has been
+For voice commands, record a Spotify example without executing, review the heard text,
+save it, click **Apply saved phrases** only after protecting work in voice-launched apps, then speak the phrase and confirm the actual app
+appears. No live voice-command enrollment, model inference or disruptive action has been
 claimed tested by the automated harness.
 
 ## Update and uninstall
