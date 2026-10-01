@@ -1,228 +1,210 @@
 # Omarchy Voice
 
-Local-first voice commands for Omarchy. **v0.1 architectural MVP, not a finished public product.** Python handles audio, speech recognition and permission-checked actions; a native Omarchy Shell widget presents status and confirmation.
+Local push-to-talk voice commands for Omarchy. Speech is transcribed on this machine. A Python service plans and runs a fixed set of desktop actions. An Omarchy bar widget shows status, confirmation, and saved phrases.
+
+Hold the shortcut, speak, release. The default binding is **F5**. F9 stays Voxtype dictation and is not part of this plugin.
 
 ```text
-Hold F5 → PipeWire → local Faster-Whisper → deterministic intent
-                                                    ↓
-                                permission check → registered desktop action
-                                                    ↑
-                               Omarchy widget / explicit close confirmation
+Hold F5 → PipeWire → local faster-whisper → exact command
+                                              ↓
+                         permission check → registered desktop action
 ```
 
-## Current implementation
+This is a v0.1 implementation, not a finished public product. The [architecture proposal](docs/architecture.md) describes goals that are not implemented. Decisions that differ from that proposal are in [docs/adr/](docs/adr/).
 
-- Independent PipeWire capture with bounded duration and temporary WAV cleanup.
-- Local Faster-Whisper adapter, offline inference after an explicit model download, CPU/int8 defaults; optional CUDA configuration.
-- Replaceable STT contract and injected test provider; no dependency on Voxtype.
-- Deterministic English parsing, installed `.desktop` app discovery and configurable exact voice commands.
-- Native-panel enrollment of reviewed spoken voice commands: a bounded recording transcribes without executing, or a phrase can be typed; the user explicitly maps the text to an installed app. No training audio is saved.
-- Strict action/parameter validation, action permissions, expiring single-use nonvoice confirmation for window closing. No arbitrary shell, shutdown or reboot action.
-- Unix-socket daemon with owner-only runtime permissions, bounded requests, duplicate-instance protection, cancellation and killable transcription worker.
-- JSON CLI, dry-run command planning, diagnostics, model download, and `omarchy-voice logs` for the local diagnostic file.
-- Native Omarchy bar widget/panel: opens on a paginated application grid. **Applications** and **Desktop** are separate catalogs. Applications with any voice command currently routable to them (a built-in/configured catalog command or a saved phrase) lead the grid in alphabetical order, followed by the remaining applications, also in alphabetical order; the classification comes from the trusted `apps` catalog and the saved phrase mapping, so no application is hard-coded. Desktop lists real window/workspace/system phrases (close, monitor move, workspace switch/move, mute, lock) — not Super+K swap-window chords, which voice does not run. Clicking an app shows **Voice commands → Current configured commands** underneath: exact built-in/configured app-launch phrases that resolve to that installed app, plus saved panel phrases, each listed once. **New command** reveals the record-or-type form; the only app action is **Open application**. After recording on a multi-monitor bar, only the widget that initiated recording reopens for review. Settings is a separate screen from a button next to Start/Stop. Settings **Provider** is a dropdown (v0.1: faster-whisper only); Model, Device and Language appear from that provider’s capabilities. Saving STT writes `config.toml` and needs an explicit service restart.
-- After a successful spoken action that has a Super+K chord, show the same bottom-center Omarchy OSD used when launching an app, with **only the keybinding** (`SUPER + RETURN`, `SUPER + 4` for workspace switch, `SUPER SHIFT + 4` for move-window-to-workspace). Settings includes a **Show keybinding** toggle (on by default); turning it off skips the overlay immediately. Chords are refreshed from `omarchy menu keybindings --print`. Actions without a chord, or relative “next/left workspace” moves, show no OSD.
-- Opt-in systemd user service and Lua hold-to-talk bindings; existing F9/Voxtype remains independent.
+## Use
 
-### Supported commands
+1. Hold **F5**, speak one command, release.
+2. The bar widget follows the service: listening, transcribing, running, confirm, or error.
+3. **Close window** does not run until you confirm it in the panel. Speech cannot approve it.
+4. Open the widget to enroll a phrase, inspect commands, or change speech settings.
 
-| Spoken command | Result |
+The panel has two catalogs:
+
+- **Applications.** Installed apps. An app is **Configured** when at least one voice command can currently route to it: a built-in phrase from the app catalog, or a saved phrase. Configured apps are listed first, alphabetically, then the remaining apps, alphabetically. Click an app to see its commands or add a phrase. **Open application** is the only app action, and the panel does not launch it.
+- **Desktop.** Window, workspace, and system phrases the router actually plans. These are not Super+K chords.
+
+Saving a phrase does not activate it. Click **Apply saved phrases**. That restarts the user service and checks that the running daemon reports the saved configuration. Speech settings work the same way: **Apply STT** restarts the service. Until then, the panel is showing saved configuration, not what the daemon has loaded.
+
+After a successful spoken action that has a Super+K chord, the Omarchy OSD can show that chord only. **Show keybinding** in Settings turns the overlay off. Actions without a chord, and relative workspace moves, show nothing.
+
+## Spoken commands
+
+| Say | Result |
 | --- | --- |
-| Open Brave / Open terminal / Open Spotify | Launch an installed application (terminal uses Omarchy’s default terminal) |
-| Open / launch / start `<application>` | Exact installed name or configured voice command |
-| Close window | Request explicit confirmation |
-| Move this / this window / the window left or right | Move the focused window to that monitor |
+| Open / launch / start `<application>` | Launch that installed application |
+| Open terminal | `omarchy launch terminal`, unless a `terminal` phrase is saved |
+| Open browser | `omarchy launch browser` (the OS default browser) |
+| Open Brave / Open Chromium | Those apps only. The names are not synonyms |
+| Close window | Ask for confirmation, then close the window focused when recording started |
+| Move this window left / right | Move the focused window to that monitor |
 | Move this window to the other screen | Move the focused window to the other monitor |
+| Workspace one … ten | Switch to workspace 1–10 |
 | Switch / move to workspace four | Move the focused window to workspace 4 |
-| Move window to the left / right / next / previous workspace | Move the focused window one workspace over |
-| Workspace one / two / … / ten | Switch focus to workspace 1–10 |
-| Volume up / Volume down | Adjust output volume |
+| Move window to the left / right workspace | Move the focused window one workspace |
+| Volume up / Volume down | Change output volume |
 | Mute | Toggle output mute |
 | Lock computer | Lock the desktop |
 
-Ordinary single sentence-ending punctuation from STT is accepted. Unknown/ambiguous commands fail safely. Spoken **open terminal**, **open the terminal**, **open term**, **open termina**, **open terminator**, and **open ghostty** run `omarchy launch terminal` unless you save a `terminal` phrase. Spoken **open browser** runs `omarchy launch browser`, which uses the current OS default browser (`xdg-settings get default-web-browser`) and needs no voice configuration. Changing that default changes **open browser** on the next command. Spoken **open brave** / **open brave browser** open Brave, and **open chromium** opens Chromium; those names are not synonyms. Spotify's default is **open spotify**; earlier hard-coded STT mishearings (**open a Spotify**, **open and Spotify**, **open is Spotify**) are no longer accepted by default. Any exact mishearing such as **open is putty high** can instead be reviewed and explicitly mapped to Spotify in the native panel; **open music app** is a user-chosen voice command. A comma after Open (`Open, brave.`) is ignored. Window moves accept a small set of natural phrases (`move this window to the left`, `move it to the other screen`, `switch to workspace four`, `move window to the left workspace`) and still use the window focused when you press F5. **Move … left/right** without `workspace` is a monitor move; **… left/right workspace** is a workspace move. Common STT mishears such as **water space** / **world space** and **for** / **forward** for four are normalized. Numbered window labels and app names are rejected. `app.close` is not implemented: only closing a window is supported. Volume directions use the shared `audio.volume` action with validated parameters, rather than separate action IDs in the proposal.
+Matching is exact after light normalization: a sentence-ending period, a comma after “open”, and a few workspace mishears (`water space`, `for` as four). Unknown or ambiguous speech does nothing. Numbered window labels are rejected. Closing an application is not implemented.
 
-Application launches use validated argv without a shell, detached standard streams and a new process session. `systemd-run --user --scope` hands the launcher to a transient scope outside the voice service cgroup before it launches an app; if the user manager cannot create the scope, the command fails rather than falling back to an unsafe service child. The backend watches the scope launcher for up to 250 ms: missing executables and immediate nonzero exits fail; a still-running launcher is accepted and reaped asynchronously when it exits, without a lifetime timeout or termination. Acceptance is not proof that a window appeared; failures after the startup window are not reported to the UI. An isolated service-stop probe and a live voice-launched Brave window surviving a service restart verified the process boundary; the user separately reported that Spotify phrase Apply left voice-opened apps running. Other app types and error paths remain unverified. Other desktop actions retain their 10-second command timeout. See [ADR 0004](docs/adr/0004-app-launch-scopes.md).
+**Move … left/right** without `workspace` is a monitor move. **… left/right workspace** is a workspace move. **Open the terminal**, **open term**, and **open ghostty** also run `omarchy launch terminal` unless you save a `terminal` phrase. Window moves use the window focused when you press F5.
 
-## Install backend
+## Install the backend
 
-Requirements: Linux graphical session with Omarchy/Hyprland, a running systemd user manager (`systemd-run`), PipeWire `pw-record`, `wpctl`, `gio`, and `uv`. Python **3.12 is the tested runtime**; `uv` manages it without modifying system Python. CUDA is optional and untested. The native frontend targets the installed Omarchy 4.0.4-1 shell and Hyprland 0.56.2 Lua API, not older `.conf` configurations.
+Requires a graphical Omarchy session, a systemd user manager, PipeWire (`pw-record`), `wpctl`, `gio`, `hyprctl`, and `uv`. Python 3.12 is the tested runtime. `uv` provides it; system Python is not modified.
 
 ```sh
 git clone https://github.com/Daniluvatar/omarchy-voice.git
 cd omarchy-voice
 uv tool install --python 3.12 --from '.[stt]' omarchy-voice
-# Ensure ~/.local/bin is on PATH.
-omarchy-voice --help
 omarchy-voice doctor
 omarchy-voice download-model
 ```
 
-The repository is currently private; cloning requires access through your GitHub credentials. `download-model` downloads the configured model (default `tiny.en`) into the Hugging Face cache. That step needs Internet access; transcription then uses locally cached files and does not send microphone audio to a service. `doctor` checks dependencies, not model readiness; actual transcription validates the model. The `stt` extra pins `av<19`: PyAV 19 removed the `metadata_errors` keyword that faster-whisper 1.x still passes to `av.open()`, and an unpinned transitive upgrade to PyAV 19 was shipping as a working install while breaking every transcription with a `TypeError`. Every local transcription failure surfaces in the panel as a concise, path-free message — never raw Python exception text and never a local absolute path. A missing model or an unexpected provider/environment crash (such as the PyAV `metadata_errors` regression) shows “Local transcription failed; check provider and downloaded model”; expected failures keep their specific prompt (install the `stt` extra, no supported speech detected, transcription timed out). In every case the worker records the full exception type and message in the local diagnostic log; inspect it with `omarchy-voice logs`. If your tool environment predates the `av<19` pin, repair it with `uv tool install --force --python 3.12 --from '.[stt]' omarchy-voice`.
+`~/.local/bin` must be on `PATH`. The repository is private. `download-model` needs network once. After that, transcription uses the local Hugging Face cache and does not send audio off the machine. The default model is `tiny.en`.
 
-### Configuration
+The `stt` extra pins PyAV below 19. faster-whisper 1.x still passes `metadata_errors` to `av.open()`, which PyAV 19 removed. If a tool environment was created before that pin, reinstall with `uv tool install --force --python 3.12 --from '.[stt]' omarchy-voice` and restart the service.
 
-Optional path: `~/.config/omarchy-voice/config.toml` (respects `XDG_CONFIG_HOME`). To create it without overwriting an existing file:
+`doctor` checks that the required programs and the STT package are present. It does not prove the model can transcribe.
+
+## Install the widget
+
+The widget is the `plugin/` directory, id `local.omarchy-voice`. Do not run `omarchy plugin add` on this repository: that command expects a manifest at the repository root. Do not edit `/usr/share/omarchy`. A manual copy is not updated by `omarchy plugin update`.
+
+From the repository root, after the backend is on `PATH`:
+
+```sh
+omarchy plugin validate ./plugin
+test ! -e "$HOME/.config/omarchy/plugins/local.omarchy-voice" && \
+  cp -R ./plugin "$HOME/.config/omarchy/plugins/local.omarchy-voice"
+install -Dm755 integrations/omarchy-voice-edit-config "$HOME/.local/bin/omarchy-voice-edit-config"
+install -Dm644 integrations/omarchy-voice.service "$HOME/.config/systemd/user/omarchy-voice.service"
+systemctl --user daemon-reload
+systemctl --user enable --now omarchy-voice.service
+omarchy plugin enable local.omarchy-voice
+omarchy bar put local.omarchy-voice --section right --index 0
+```
+
+If that plugin directory already exists, use [Update and uninstall](#update-and-uninstall). Do not merge an old copy with a new one. If the bar does not pick up a replaced widget, run `omarchy restart shell`.
+
+Do not run `omarchy-voice serve` while the user service is active. The unit expects `~/.local/bin/omarchy-voice`. If desktop actions cannot see the session, check `systemctl --user show-environment` for `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE`. Do not hard-code another session’s values.
+
+The widget polls only while the bar loads it. Hiding the widget does not stop a capture. Cancel from the panel or with `omarchy-voice cancel`. The reversible widget steps are also in [docs/integration.md](docs/integration.md).
+
+## Shortcut
+
+F5 is opt-in. Review `integrations/hyprland-bindings.lua`, then copy the `hl.unbind` and the two `o.bind` lines into `~/.config/hypr/bindings.lua`. Press starts capture. Release stops it. Then:
+
+```sh
+hyprctl reload
+hyprctl configerrors
+```
+
+The widget’s shortcut dropdown changes the label only. It does not rewrite Hyprland. Leave F9, Super+V, Super+Ctrl+V, and Super+S alone. Do not hold F5 and F9 together. If a release is missed, capture stops at the configured limit; use Cancel.
+
+## Configuration
+
+Optional file: `~/.config/omarchy-voice/config.toml` (`XDG_CONFIG_HOME` is respected). Unknown keys and unknown action IDs are rejected.
 
 ```sh
 mkdir -p ~/.config/omarchy-voice
 test -e ~/.config/omarchy-voice/config.toml || cp examples/config.toml ~/.config/omarchy-voice/config.toml
 ```
 
-Review [examples/config.toml](examples/config.toml) before enabling the daemon. **Defaults allow the supported actions**, including desktop locking; window closing still requires confirmation. To deny all execution during setup:
+Defaults allow the supported actions. Window closing still requires confirmation. To deny execution while setting up:
 
 ```toml
 [permissions]
 allow = []
 ```
 
-Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`. Unknown settings and action IDs are rejected. App voice commands must match actual installed desktop IDs; the example IDs are not a promise that those apps are installed. Edit `[applications.voice_commands]` to match your installation (legacy `[applications.aliases]` entries are still read), or use the native panel's **Voice commands** section / CLI to save a reviewed text mapping. Panel phrases are stored separately in `~/.config/omarchy-voice/voice_commands.json` (respects `XDG_CONFIG_HOME`; a pre-rename `aliases.json` store is migrated into it once, never re-applied) and take precedence over duplicate TOML entries. Select a searchable **Application** (from installed desktop entries): its current configured commands list verified `open …` routes, not every possible verb or unconfigured app name. For example, when Brave is the OS default browser it shows **open browser** and **open brave**, and Spotify shows **open spotify** and a saved **open music app**, if those apps/routes exist locally. Click **New command**, choose **Voice phrase** (record-and-review or type), then use the **● record**, **■ finish**, and **✓ save** icon buttons; their descriptions appear on hover. The only app action is **Open application**; it is displayed as text, not a selectable action menu. Then explicitly click **Apply saved phrases** to restart the service. Recording never runs its transcript as a command. Closing an application is not implemented; window closing remains a separate confirmation-gated action, not an app phrase option. Default capture limit is 15 seconds, STT timeout 60 seconds, confirmation expiry 15 seconds. Panel Settings can set **Provider** (faster-whisper only), **Model**, **Device** and **Language** through `omarchy-voice settings stt`; that writes `[stt]` in `config.toml` and needs an explicit **Apply STT** / service restart. Other keys (permissions, capture limits) still need the TOML editor. Configuration or voice-command changes require restarting the daemon; saving a phrase or STT setting alone does not restart it. With the installed app-scope backend, voice-launched apps survived Apply in a live test; restart still interrupts any ongoing voice capture. `--config PATH` is a global option **before** the subcommand.
+Allowed action IDs: `app.launch`, `window.close`, `window.move_monitor`, `window.move_workspace`, `workspace.switch`, `audio.volume`, `audio.mute`, `system.lock`.
 
-Saved panel phrases have a **pencil (✎)** and **remove (×)** icon on the right of each command row. The pencil scrolls to the shared phrase editor below the list, focuses and selects the existing phrase for editing, then atomically replaces the old saved mapping on Save; it does not edit text directly in the command row. The remove icon switches to a confirm (✓) icon while the pencil switches to cancel (↶). Built-in phrases and voice commands from `config.toml` are read-only in this panel; create a new phrase or edit configuration separately. A phrase that already opens another specific application is rejected with **That voice command is already taken** and is not moved. **open chromium** cannot be saved onto Brave, and **open brave** cannot be saved onto Chromium. **open browser** may be saved once to pin that role to one app; removing that saved phrase returns it to the OS default. Other app-specific phrases stay where they are. **New command** remains below the list. **Apply saved phrases** stays available beneath the form even when no new command is being entered and explicitly restarts the service after a change; a successful restart then triggers a bounded readiness check rather than an unverified "restart completed" status. The CLI equivalent is `omarchy-voice voice-command update 'music app' 'open favorite music' spotify.desktop` (the `alias` subcommand and `start-alias` verb remain compatibility names).
+| Setting | Values |
+| --- | --- |
+| Provider | `faster-whisper` only |
+| Model | `tiny.en` (default), `base.en`, `small.en` |
+| Device | `cpu` (default). `cuda` only if `/dev/nvidia0` exists or is already configured |
+| Language | `en` |
+| Capture limit | 15 seconds |
+| STT timeout | 60 seconds |
+| Confirmation expiry | 15 seconds |
 
-The panel reloads saved phrases and installed-app routes on opening and after successful phrase edits, and queues a refresh rather than dropping it while a request is running. A failed write leaves the editor and last valid rows intact. Switching apps shows only the chosen app's rows; switching to Desktop clears the app detail, and a removed app is deselected on refresh. Searching away from a selected app also clears its detail. The list shows **saved configuration**, which may not yet be active in the running service. Changes made in the current panel instance show a pending-Apply notice until **Apply saved phrases** completes successfully. After a successful restart, **Apply saved phrases** verifies the running daemon is ready before claiming success: it probes `omarchy-voice status` up to four times at 500 ms intervals (bounded, never an infinite poll) and accepts a `state` response, then compares the daemon's new `voice_commands_revision` field (a deterministic 16-hex SHA-256 digest of the saved mapping; it never contains phrases or other content) with the revision last reported by the local `apps` listing. Success reports **Applied: the running voice service is ready and has the saved voice commands**; a ready daemon with a different digest reports that it is **not running the saved voice commands**; a missing digest on either side, or four failed probes, reports that verification could not be completed. The probe only reads status, never restarts, saves, or executes anything, and pending changes stay marked pending on a failed restart, a readiness timeout, or a revision mismatch; they clear only when the verified revision matches. The STT **Apply STT** path still issues a plain restart without readiness verification (known similar gap, out of scope for v0.1). Reopening a new widget cannot infer whether voice commands saved elsewhere were applied.
+Panel writes use `omarchy-voice settings stt <key> <value>`. Also: `omarchy-voice settings show` and `omarchy-voice settings keybind-osd on|off`.
 
-## Run without installing the desktop integration
+Saved phrases live in `~/.config/omarchy-voice/voice_commands.json`. A pre-rename `aliases.json` is migrated once and is not applied again. That file overrides a duplicate `[applications.voice_commands]` entry in TOML. Example desktop IDs in `examples/config.toml` are not a promise that those apps are installed. The CLI accepts an application name or a desktop id.
 
-First inspect commands without changing the desktop:
+A phrase that already opens another specific application is rejected. **open browser** may be saved once, which pins that role; removing it returns the phrase to the OS default. **open brave** and **open chromium** cannot be moved onto each other. Built-in and TOML phrases are read-only in the panel.
+
+## CLI
+
+`run` and `transcribe` are dry runs unless `--execute` is passed. `--execute` and `start` require the daemon. `start` uses the microphone and runs a permitted command.
 
 ```sh
 omarchy-voice parse 'workspace two'
-omarchy-voice run 'workspace two'             # Dry run: prints validated argv
-omarchy-voice run 'open terminal'             # Dry run: omarchy launch terminal
-omarchy-voice voice-command set 'open music app' Spotify # Save exact phrase; no app launched
-omarchy-voice voice-command list
-omarchy-voice voice-command remove 'music app'       # Undo the voice command
-omarchy-voice transcribe /absolute/path/command.wav  # Real local STT, dry-run action
-```
-
-File transcription accepts bounded PCM WAV audio within the configured capture limit. Unsupported recognized speech returns an error and does not execute anything.
-
-Start a daemon in one terminal:
-
-```sh
+omarchy-voice run 'workspace two'
+omarchy-voice run 'open terminal'
 omarchy-voice serve
-```
-
-In another terminal, **these commands activate your microphone and execute a recognized permitted command**:
-
-```sh
-omarchy-voice start
-# Speak a supported command.
-omarchy-voice stop
-omarchy-voice status
+omarchy-voice start          # microphone; executes
+omarchy-voice stop           # end capture and transcribe; does not stop the daemon
 omarchy-voice cancel
+omarchy-voice status
 omarchy-voice logs
-```
-
-`stop` ends capture and begins processing; it does **not** shut down the daemon. Ctrl+C in its terminal shuts down `serve` and cleans up. Only one daemon may run per user runtime directory. Diagnostic lines, including the recognized transcript, are appended to `~/.local/state/omarchy-voice/voice.log`. Use `omarchy-voice logs` or `omarchy-voice cancel` to inspect or clear a leftover error.
-
-Explicit text/file execution requires the daemon:
-
-```sh
+omarchy-voice confirm TOKEN  # close-window approval; never from speech
+omarchy-voice apps
+omarchy-voice providers
+omarchy-voice voice-command list
+omarchy-voice voice-command set 'music app' Spotify
+omarchy-voice voice-command update 'music app' 'favorite music' Spotify
+omarchy-voice voice-command remove 'music app'
+omarchy-voice transcribe /absolute/path/command.wav
 omarchy-voice run 'workspace two' --execute
-omarchy-voice transcribe /absolute/path/command.wav --execute
 ```
 
-Execution uses the daemon's configuration. The default for `run` and `transcribe` is dry-run; push-to-talk capture is an execution workflow. Closing a window binds confirmation to the window captured when recording starts (or when the text request arrives), not whichever window the popup later focuses. It returns a token for explicit UI/CLI approval (`omarchy-voice confirm TOKEN`); never approve tokens automatically or from recognized speech.
+`alias` and `start-alias` are compatibility names for `voice-command` and `start-voice-command`. File transcription accepts a bounded PCM WAV. Recognized speech that is not a supported command returns an error and runs nothing.
 
-## Install the native widget and shortcut
+Diagnostic lines, including the transcript, are appended to `~/.local/state/omarchy-voice/voice.log`. Panel errors stay short and do not include paths or Python tracebacks. Use `omarchy-voice logs` for the recorded exception.
 
-The widget lives in `plugin/` (not the repository root). Copy that folder, enable it, and put it on the bar. Do not use `omarchy plugin add` on this repository URL.
+## Implementation
 
-**F5** is the hold-to-talk binding on this machine (record-style keycap, no Super/Shift). F9 stays Voxtype dictation. Super+S is Toggle scratchpad. Super+V stays Universal paste. Super+Ctrl+V stays Clipboard manager. Super+; is restored. Super+Shift+V is not used because releasing Shift first often never fires `stop`. The widget dropdown can display a different preferred shortcut; applying it still requires editing `~/.config/hypr/bindings.lua`. Normal activation is hold-to-talk only; voice-command enrollment uses explicit in-panel record/finish controls and does not execute recognized speech.
+- Capture is a bounded PipeWire recording. The WAV is deleted. Enrollment does not keep training audio and does not execute the heard text.
+- Transcription is local faster-whisper in a separate worker (`local_files_only` after download). CPU uses `int8`. CUDA uses `float16`.
+- The parser is deterministic English. It never turns a transcript into a shell command. Shutdown and reboot are not actions.
+- Application launch uses validated argv, detached from the service through `systemd-run --user --scope`. If the user manager cannot create that scope, the launch fails. A launched app is not a child of the voice service, so restarting the service does not close it. Other desktop actions time out after 10 seconds. See [ADR 0004](docs/adr/0004-app-launch-scopes.md).
+- The supplied user unit does not set `NoNewPrivileges`. That flag was inherited by launched apps and broke `sudo` inside them. See [ADR 0002](docs/adr/0002-launched-app-privileges.md). A terminal process started before that fix can keep the old flag until its process exits.
+- The Applications grid comes from `omarchy-voice apps` and the saved-phrase list. No application name is hard-coded. If either source is still missing when the panel opens, it retries that source every 2 seconds, at most 30 times, and keeps the last good list on failure.
+- **Apply saved phrases** probes `omarchy-voice status` and compares `voice_commands_revision` with the revision last reported by `apps`. The revision is a digest of the mapping, not the phrases. A mismatch, a timeout, or a failed restart leaves the change pending.
 
-On this machine the backend, service, bar widget, and F5 binding are installed from this checkout. Other machines should follow [docs/integration.md](docs/integration.md).
+## Update and uninstall
 
-## Development and validation
-
-```sh
-uv sync --python 3.12 --extra test --extra stt
-XDG_STATE_HOME="$(mktemp -d "${TMPDIR:?}/voice-tests.XXXXXX")" uv run --extra test --extra stt pytest -q
-uv run --extra stt omarchy-voice run 'workspace two'
-python3 integrations/validate.py
-uv build
-```
-
-`integrations/validate.py` uses installed Omarchy/Quickshell types and needs the current Wayland session. It validates the manifest, Lua syntax, native panel compilation and UI model state/error/token behavior without installing the plugin. Standalone qmllint can report missing installed `QProcess::ExitStatus` metadata despite successful native compilation. The service unit cannot pass its executable-path check until the backend is installed at `~/.local/bin/omarchy-voice`.
-
-### Verification status
-
-- **203 automated tests passed** after integrating the branches, adding atomic saved-phrase updates, and retiring the three Spotify STT-mishearing defaults. They cover backend unit/security/daemon integration, routed phrase listing, reviewed voice-command storage/permissions/no-execution recording, app-scope process lifetime, desktop actions, OSD, bounded STT settings writes, the deterministic `voice_commands_revision` digest reported by `status` and `apps`, and the STT error contract (a curated missing-model message, plus an unexpected provider/environment crash — such as the PyAV `metadata_errors` regression — logged locally with its type and message while the panel receives only a concise, path-free prompt).
-- Native manifest/Lua/QML harness executed successfully against this machine's installed shell, including two simulated monitor instances receiving the same voice-command review; only the recording instance emits the reopen signal. A separate native panel harness uses a temporary CLI fixture to check queued save/list responses, update/remove, failed writes, fast app switches, Desktop navigation, reopen refresh and that the update editor enters the viewport after layout with a long command list, plus the bounded Apply readiness flow (probe success, restart failure, four-attempt probe timeout, and revision mismatch) without changing the user's voice commands or service. The user separately confirmed review remained on the right monitor after **Finish recording**, and confirmed the refreshed panel and automatic editor scroll worked after an Omarchy Shell restart. These live observations do not cover every simulated failure path.
-- The backend with the app-scope fix, current-command catalog, and monitor-specific `VoiceModel.qml` change are installed locally. A voice-launched Brave window survived a voice-service restart with the same PID in a separate application scope, and the user reported that applying a recorded Spotify phrase did not close TopTracker or other apps. The user visually approved the **Current configured commands / New command** layout and the icon-row controls; hover descriptions appeared and disappeared normally. After a user-approved service restart, dry-runs routed **open brave** to Brave, **open spotify** to Spotify, and rejected **open and spotify**. These are separate observations, not a systematic live microphone/error-path acceptance suite.
-- “Open the terminal” parses as `app.launch` for `terminal`; its dry-run produces `omarchy launch terminal`. Reinstall and restart the user service after updating the backend. The lifetime regression uses a harmless Python fixture, not a live terminal window.
-- Actual Faster-Whisper `tiny.en` CPU transcription succeeded on the public whisper.cpp `samples/jfk.wav` recording; no mocked STT was used for that check.
-- Real CLI dry-run for “workspace two” produced `hyprctl dispatch hl.dsp.focus({workspace="2"})` without running it; all doctor dependency checks passed in the development environment.
-- **Not yet verified systematically:** live microphone → voice-command enrollment → spoken phrase → real desktop action; installed widget popup/focus across monitors; physical F5 release ordering; CUDA; long-session stability and latency targets. Automated fixtures and initial user feedback are not substitutes for these acceptance checks.
-
-## Missing / intentionally deferred
-
-- Full measured live microphone/shortcut acceptance. The bar widget and F5 binding are installed on this machine; popup/focus across monitors and hold-to-talk release behavior still need a systematic check.
-- In-panel permission/microphone configuration, model-download UI and graphical onboarding. Provider/model/device/language are now in Settings; remaining keys still live in `config.toml`.
-- Additional production STT providers (see [Speech providers](#speech-providers)), streaming and persistent/shared model service (models currently run in isolated workers).
-- Internationalized command grammars, wake word, always-listening, cloud STT, LLM/Hermes integration, arbitrary shell, power actions and provider marketplace.
-- AUR/distribution packaging, config migrations, broad compatibility and performance benchmarks.
-
-See the [original architecture proposal](docs/architecture.md) and [implementation decisions](docs/adr/0001-mvp-boundaries.md), including the [user-approved app phrase decision](docs/adr/0003-user-approved-app-aliases.md). The proposal describes future goals, not implemented features.
-
-## Speech providers
-
-v0.1 ships **one** production STT: local **faster-whisper**. Settings has a **Provider** dropdown plus capability dropdowns for that provider. There is no whisper.cpp, Voxtype, Parakeet, or cloud row.
-
-| Setting | Current values | Notes |
-| --- | --- | --- |
-| Provider | `faster-whisper` | Only allowlisted name; anything else is rejected |
-| Model | `tiny.en` (default), `base.en`, `small.en` | Larger models need `omarchy-voice download-model` first |
-| Device | `cpu` (default); `cuda` if `/dev/nvidia0` exists | CPU uses `int8`; CUDA uses `float16` |
-| Language | `en` | The command parser is English-only |
-
-Hold F5 still records a WAV, then a **spawned worker** loads the model (`local_files_only=True`) and returns text to the deterministic parser. Voxtype (F9) stays a separate dictation app.
-
-Panel writes go through `omarchy-voice settings stt <key> <value>` into `~/.config/omarchy-voice/config.toml`. The running daemon does **not** reload STT until **Apply STT** / `systemctl --user restart omarchy-voice.service`. CLI: `omarchy-voice settings show`.
-
-### Adding another provider
-
-Do not add a Settings row until that provider can actually transcribe. Concrete steps:
-
-1. Implement the existing `STTProvider` contract in `src/omarchy_voice/providers.py`: `available()`, `capabilities()`, `transcribe(audio, language)` on a WAV file. Keep optional imports lazy.
-2. Register the name on `STT_PROVIDERS` in `config.py`. Unknown `provider =` values must still fail closed.
-3. Advertise Settings options from `stt_options()`: `providers` plus `capabilities[name]` arrays for that engine (`model` / `device` / `language`, or none). Empty arrays hide those dropdowns.
-4. Route `IsolatedSTT` / `download_model` / `omarchy-voice providers` by `config.provider`. Add an optional extra in `pyproject.toml` instead of a required dependency.
-5. Tests: unknown provider rejected; capability JSON matches the UI; a fake/unavailable provider is not listed as selectable.
-
-Keep audio local unless the user explicitly opts into a networked engine. Do not merge Voxtype into this dropdown (F9 dictation stays independent). Do not send transcripts to an LLM for intent.
-
-## Update / uninstall
-
-After updating the checkout, reinstall the backend from its current source:
+Backend:
 
 ```sh
 uv tool install --force --python 3.12 --from '.[stt]' omarchy-voice
-# If installed as a service:
 systemctl --user restart omarchy-voice.service
 ```
 
-Follow the integration guide to replace the manually copied plugin/helper/service and remove optional bindings. `omarchy plugin update` does not update manual copies. Uninstall the backend using `uv tool uninstall omarchy-voice`; configuration and model caches are not silently removed.
+Widget: `omarchy-voice cancel`, then `omarchy plugin disable local.omarchy-voice`. Replace only `~/.config/omarchy/plugins/local.omarchy-voice` with a new copy of `plugin/`. Validate, enable, and `omarchy bar put` again. Reinstall the helper and unit if those files changed, then `systemctl --user daemon-reload` and restart the service. Run `omarchy restart shell` if the bar keeps the previous widget.
 
-## Documentation policy
+Uninstall:
 
-README describes the **current** behavior, implementation status and installation/run commands. Every behavior change must update it, replacing stale instructions rather than appending contradictory historical guidance. Original design context belongs in the architecture proposal; decision rationale belongs in ADRs.
+1. `omarchy-voice cancel`
+2. `systemctl --user disable --now omarchy-voice.service`
+3. `omarchy plugin disable local.omarchy-voice`
+4. Remove `~/.config/omarchy/plugins/local.omarchy-voice` after checking the path
+5. Remove `~/.config/systemd/user/omarchy-voice.service` and `~/.local/bin/omarchy-voice-edit-config`, then `systemctl --user daemon-reload`
+6. Remove the F5 lines from `~/.config/hypr/bindings.lua`, then `hyprctl reload` and `hyprctl configerrors`
+7. `uv tool uninstall omarchy-voice` if the tool should go too
 
-## Design and UX backlog
+Do not delete `config.toml`, `voice_commands.json`, or the model cache unless that is intentional. Do not change F9, Voxtype, or anything under `/usr/share/omarchy`.
 
-The initial **Application → Voice phrase** controls work in the panel, but this is a functional first pass, not the intended finished design. Priorities to discuss and prototype:
+## Development
 
-1. **Clearer setup flow:** the panel opens on the application grid. Clicking an app reveals **Voice commands**, with current routed built-in/configured phrases (or an empty state), then **New command** to reveal enrollment. The only app action is **Open application**; no command is invented for unconfigured apps. The separate **Desktop** catalog remains unchanged. Settings is reached from a button next to Start/Stop. Remaining polish: denser layout, keyboard navigation, and bringing the app detail into view on selection.
-2. **Recording and review feedback:** show a bounded recording timer and unmistakable listening/transcribing/review states. Present the recognized phrase prominently with **Retry**, **Edit**, and **Save** paths; never execute a training utterance or imply that saving audio retrains the STT model.
-3. **Voice phrase management:** saved voice commands render once as phrase → action rows with inline edit/remove and a session-local pending-Apply notice. After a successful restart, **Apply saved phrases** runs a bounded readiness probe and configuration-revision comparison (see the Apply description above); the native panel harness verifies all four outcome paths. Remaining: verifying active routing end-to-end after Apply, plus broader failure-path acceptance. The STT Apply path still lacks readiness verification. Preserve explicit restart/undo semantics and exact-match validation.
-4. **App picker polish:** the Applications grid and app selection share the same trusted `apps` list, including a sanitized `Icon=` field. Remaining: empty/duplicate states, keyboard navigation in the popup, and layout/contrast checks on both monitors.
-5. **Provider presentation:** Settings has a **Provider** dropdown. v0.1 lists only **faster-whisper**. Model, Device and Language appear from that provider’s capabilities (tiny.en / base.en / small.en, CPU, English). CUDA appears only when `/dev/nvidia0` exists or the current config is already cuda. Writes go through `omarchy-voice settings stt <key> <value>` into `config.toml`; the running daemon does not pick them up until **Apply STT**. Do not add whisper.cpp, Voxtype, or cloud rows until those providers exist.
-6. **Future action design:** the app panel currently offers only **Open application**, without an action picker. Closing an app is not implemented; define an explicit target and nonvoice confirmation policy before offering it. Do not repurpose the existing focused-window close as silent app termination.
+```sh
+uv sync --python 3.12 --extra test --extra stt
+uv run --extra test --extra stt pytest -q
+python3 integrations/validate.py
+```
 
-## Bugs
-Intermittent local transcription failures are distinct from the observed Spotify phrase mishears. `doctor` checks the STT dependency but not model readiness; use `omarchy-voice logs` to diagnose a transcription failure. The new voice-command panel has initial positive user feedback, but Spotify launch after enrollment still needs a documented end-to-end check.
-
-**Local transcription failed after an unrelated update — now diagnosed and pinned.** A transitive PyAV 19.0.0 release (September 2026) removed the `metadata_errors` argument that faster-whisper 1.2.x still passes to `av.open()`, so every local transcription raised `TypeError: open() got an unexpected keyword argument 'metadata_errors'` and the worker reported only the generic “Local transcription failed” message. Fixed by (1) pinning `av<19` in the `stt` extra and (2) having the STT worker record the full exception type and message in the local diagnostic log (`omarchy-voice logs`) while surfacing only a concise, path-free message to the panel — no raw Python exception text or local absolute path. If your tool environment was installed before the pin, repair it with `uv tool install --force --python 3.12 --from '.[stt]' omarchy-voice` (or `uv pip install 'av<19' --python ~/.local/share/uv/tools/omarchy-voice/bin/python`) and restart the service. The Applications panel also self-heals from a cold-start source outage: on open — and whenever a catalog input is still loading — it re-fetches whichever source (`apps` **or** the saved-phrase list) hasn't loaded yet, on a **bounded 2-second retry** shared by both inputs. The retry stops as soon as both sources are loaded, is capped by a bounded counter, and resets that counter each time the panel reopens, so it is never an unbounded poll. A failed refresh leaves the previously valid catalog in place (never discarded for a failed one). Because the configured/unconfigured split is computed from the trusted per-app command catalog and the saved-phrase mapping, a temporarily unavailable source no longer leaves the grid stuck in plain alphabetical order, and no application names are hard-coded.
-
-Fixed in the supplied service unit: **open terminal → `sudo` failed** with `The "no new privileges" flag is set`. The user service had `NoNewPrivileges=yes`, which the kernel inherits into every launched application. The flag was removed from `integrations/omarchy-voice.service`; see [ADR 0002](docs/adr/0002-launched-app-privileges.md). After updating, reinstall the unit and run `systemctl --user daemon-reload && systemctl --user restart omarchy-voice.service`. Also close **all** windows of a terminal opened before the fix and launch a fresh one: Ghostty uses a single-instance process, so new windows can reuse the old process and keep its inherited flag even after the voice service restarts. Save work first; closing the terminal running this session would end it. Verify the new terminal's `NoNewPrivs` is 0 via `/proc/$$/status` before trying `sudo`.
+`integrations/validate.py` needs the installed Omarchy shell and a Wayland session. It does not install the plugin, start the microphone, or run a desktop action.
