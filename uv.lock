@@ -415,6 +415,7 @@ source = { editable = "." }
 
 [package.optional-dependencies]
 stt = [
+    { name = "av" },
     { name = "faster-whisper" },
 ]
 test = [
@@ -423,6 +424,7 @@ test = [
 
 [package.metadata]
 requires-dist = [
+    { name = "av", marker = "extra == 'stt'", specifier = "<19" },
     { name = "faster-whisper", marker = "extra == 'stt'", specifier = ">=1.1,<2" },
     { name = "pytest", marker = "extra == 'test'", specifier = ">=8,<10" },
 ]

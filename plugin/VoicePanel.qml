@@ -37,6 +37,18 @@ Panel {
     property var commandEntries: []
     property bool commandRefreshPending: false
     property bool appRefreshPending: false
+    // appsLoaded / commandsLoaded track whether each required catalog source has
+    // ever loaded successfully. While either is still missing,
+    // catalogRetryTimer keeps re-asking the missing source(s) on a bounded
+    // 2 s cadence, so a cold-start CLI/PATH outage (binary not yet resolvable
+    // when QuickShell boots) can no longer leave the app grid silently stuck in
+    // plain alphabetical order. A failed refresh keeps the last known good data
+    // instead of clearing it, and the budget resets when the panel reopens.
+    property bool appsLoaded: false
+    property bool commandsLoaded: false
+    property bool catalogRetrying: false
+    property int catalogRetryCount: 0
+    readonly property int maxCatalogRetries: 30
     property bool commandsPendingApply: false
     property bool applyChecking: false
     property int applyProbeAttempts: 0
@@ -135,8 +147,15 @@ Panel {
 
     readonly property var configuredAppIds: {
         var ids = {}
-        for (var i = 0; i < commandEntries.length; i++)
-            ids[commandEntries[i].desktopId] = true
+        // An application is configured when any voice command can currently
+        // route to it: a built-in/configured catalog command or a saved phrase.
+        // The catalog `commands` array is the backend's canonical command list,
+        // so routing semantics stay in the backend rather than QML.
+        for (var i = 0; i < appCatalog.length; i++)
+            if (appCatalog[i].commands.length > 0)
+                ids[appCatalog[i].id] = true
+        for (var c = 0; c < commandEntries.length; c++)
+            ids[commandEntries[c].desktopId] = true
         return ids
     }
 
@@ -187,8 +206,11 @@ Panel {
     }
 
     onOpenedChanged: if (root.opened) {
-        refreshCommands()
-        refreshApps()
+        // Reopening resets the bounded recovery budget so a panel that was
+        // closed while the CLI was still down keeps healing once it returns.
+        root.catalogRetryCount = 0
+        root.refreshCatalog()
+        root.resumeCatalogRetries()
     }
     onCatalogChanged: if (root.catalog === "desktop") clearAppSelection()
 
@@ -210,6 +232,16 @@ Panel {
             if (appOptions[i].value === id)
                 return appOptions[i].label
         return id
+    }
+
+    function visibleApplicationIds() {
+        var out = []
+        if (!appGrid) return out
+        for (var i = 0; i < appGrid.count; i++) {
+            var item = appGrid.itemAt(i)
+            out.push(item && item.appId ? item.appId : "?")
+        }
+        return out
     }
 
     function setCommands(commands) {
@@ -245,6 +277,21 @@ Panel {
         commandRefreshPending = false
         commandJob.command = ["omarchy-voice", "voice-command", "list"]
         commandJob.running = true
+    }
+
+    // Refresh whichever required catalog source has not loaded yet. Both the
+    // apps catalog and the saved-phrase list must eventually succeed for the
+    // grouping/badges to be meaningful; a failed refresh keeps the last known
+    // good data rather than clearing it.
+    function refreshCatalog() {
+        if (!root.appsLoaded)
+            root.refreshApps()
+        if (!root.commandsLoaded)
+            root.refreshCommands()
+    }
+    function resumeCatalogRetries() {
+        if ((!root.appsLoaded || !root.commandsLoaded) && root.catalogRetryCount < root.maxCatalogRetries)
+            root.catalogRetrying = true
     }
 
     function refreshApps() {
@@ -441,13 +488,20 @@ Panel {
                 if (code !== 0 || data.state === "error") {
                     if (listing || root.commandRequestApp === root.appChoice)
                         root.commandStatus = data.message || "Voice command request failed"
+                    if (listing)
+                        root.resumeCatalogRetries()
                 } else if (listing) {
                     if (data.voice_commands === undefined)
                         data.voice_commands = data.aliases
                     if (typeof data.voice_commands !== "object" || data.voice_commands === null || Array.isArray(data.voice_commands))
                         throw new Error("Invalid voice command list")
                     root.setCommands(data.voice_commands)
+                    // The apps endpoint reflects saved phrases, so after a
+                    // saved-phrase list refresh we must re-fetch apps to keep the
+                    // per-app rows/badges in sync (load-bearing for the refresh flow).
                     root.refreshApps()
+                    root.commandsLoaded = true
+                    root.resumeCatalogRetries()
                 } else {
                     root.commandsPendingApply = true
                     if (root.commandRequestApp === root.appChoice) {
@@ -461,6 +515,8 @@ Panel {
             } catch (e) {
                 if (listing || root.commandRequestApp === root.appChoice)
                     root.commandStatus = listing ? "Could not refresh saved phrases; showing last known list" : "Could not read voice command response; refresh the panel before retrying"
+                if (listing)
+                    root.resumeCatalogRetries()
             }
             // onExited may run before Process.running becomes false.
             Qt.callLater(root.pumpCommandRefresh)
@@ -507,6 +563,22 @@ Panel {
             root.runApplyProbe()
         }
     }
+    Timer {
+        id: catalogRetryTimer
+        interval: 2000
+        repeat: true
+        running: root.catalogRetrying && (!root.appsLoaded || !root.commandsLoaded)
+        onTriggered: {
+            root.catalogRetryCount++
+            if (root.catalogRetryCount >= root.maxCatalogRetries) {
+                root.catalogRetrying = false
+                // Both sources still missing after the bounded budget; stop
+                // instead of polling forever, keeping whatever was already loaded.
+                return
+            }
+            root.refreshCatalog()
+        }
+    }
     Process {
         id: sttRestart
         command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
@@ -544,10 +616,14 @@ Panel {
                         current[root.commandEntries[j].phrase] = root.commandEntries[j].desktopId
                     return current
                 }())
+                root.appsLoaded = true
             } catch (e) {
-                root.commandStatus = "Could not refresh installed applications; showing last known list"
+                // A failed refresh must never drop a previously loaded catalog;
+                // the last known good list is kept and the bounded retry timer
+                // keeps recovering the missing source.
+                root.commandStatus = "Could not refresh installed applications yet; showing last known list"
             }
-            Qt.callLater(root.pumpAppRefresh)
+            Qt.callLater(function() { root.pumpAppRefresh(); root.resumeCatalogRetries() })
         }
     }
     KeyboardPanel {
@@ -723,6 +799,7 @@ Panel {
                         width: parent.width
                         spacing: Style.space(8)
                         Repeater {
+                            id: appGrid
                             model: root.pagedApps
                             AppCard {
                                 required property var modelData

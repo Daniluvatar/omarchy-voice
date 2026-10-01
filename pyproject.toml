@@ -11,7 +11,9 @@ license = "MIT"
 dependencies = []
 
 [project.optional-dependencies]
-stt = ["faster-whisper>=1.1,<2"]
+# PyAV >= 19 removed the `metadata_errors` argument that faster-whisper < 2.0
+# still passes to `av.open()`; pin it until faster-whisper moves past 1.2.x.
+stt = ["faster-whisper>=1.1,<2", "av<19"]
 test = ["pytest>=8,<10"]
 
 [project.scripts]

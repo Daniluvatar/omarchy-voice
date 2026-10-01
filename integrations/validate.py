@@ -86,4 +86,6 @@ ShellRoot {
     if result.returncode or 'PASS panel compilation' not in result.stdout + result.stderr:
         raise SystemExit('QML validation failed')
 subprocess.run([sys.executable, str(repo / 'integrations/validate_panel_refresh.py')], check=True)
-print('PASS manifest, Lua syntax, native QML compilation, model and panel refresh checks')
+subprocess.run([sys.executable, str(repo / 'integrations/validate_panel_ordering.py')], check=True)
+subprocess.run([sys.executable, str(repo / 'integrations/validate_panel_async_order.py')], check=True)
+print('PASS manifest, Lua syntax, native QML compilation, model and panel refresh/ordering/async checks')

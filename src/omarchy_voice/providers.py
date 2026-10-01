@@ -64,10 +64,24 @@ def download_model(config):
 def _child(connection, config, audio, language):
     try:
         connection.send(("ok", FasterWhisper(config).transcribe(Path(audio), language)))
-    except Exception:
-        connection.send(
-            ("error", "Local transcription failed; check provider and downloaded model")
+    except VoiceError as exc:
+        # Curated, user-facing failure; never includes transcript text or paths.
+        message = str(exc) or "Local transcription failed; check provider and downloaded model"
+        connection.send(("error", message))
+    except Exception as exc:
+        # An unexpected provider/environment crash (e.g. the PyAV 19
+        # `metadata_errors` regression). Record the full exception in the local
+        # diagnostic log for support, but surface only a concise, path-free,
+        # actionable message to the service/UI.
+        from .log import write_log
+
+        write_log(
+            "ERROR",
+            "transcription-crashed",
+            provider=f"{type(exc).__module__}.{type(exc).__name__}",
+            error=f"{type(exc).__name__}: {exc}",
         )
+        connection.send(("error", "Local transcription failed; check provider and downloaded model"))
     finally:
         connection.close()
 
