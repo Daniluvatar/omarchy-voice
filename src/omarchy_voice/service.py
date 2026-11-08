@@ -12,11 +12,12 @@ import subprocess
 import threading
 import time
 from .audio import PipeWireRecorder
+from .config import stt_snapshot
 from .voice_commands import read_settings, voice_commands_revision
 from .core import VoiceError, Router, parse
 from .feedback import show_osd
 from .log import write_log
-from .providers import IsolatedSTT
+from .providers import IsolatedSTT, cached_model
 
 MAX_REQUEST = 4096
 
@@ -87,12 +88,23 @@ class Controller:
         with self.lock:
             self._expire()
             result = {"state": self.state, "message": self.message,
-                      "voice_commands_revision": voice_commands_revision(self.config.voice_commands)}
+                      "voice_commands_revision": voice_commands_revision(self.config.voice_commands),
+                      "stt": stt_snapshot(self.config)}
             if self.pending:
                 result["confirmation_token"] = self.pending[1]
             if self.state == "voice_command_review":
                 result["voice_command_text"] = self.voice_command_text
             return result
+
+    def stt_status(self):
+        """Readback of the STT settings actually loaded by this daemon."""
+        with self.lock:
+            return {
+                "state": self.state,
+                "message": self.message,
+                "stt": stt_snapshot(self.config),
+                "model_available": cached_model(self.config),
+            }
 
     def start_voice_command(self):
         return self.start(command_mode=True)
@@ -367,6 +379,7 @@ def dispatch(controller, request):
         "cancel": set(),
         "confirm": {"token"},
         "run": {"text"},
+        "stt_status": set(),
     }
     if command not in allowed or set(request) != {"command"} | allowed[command]:
         raise VoiceError("Unknown command or parameters")
