@@ -7,7 +7,7 @@ import pytest
 
 from omarchy_voice.voice_commands import read_voice_commands, remove_voice_command, set_voice_command, update_voice_command, voice_commands_revision
 from omarchy_voice.cli import main
-from omarchy_voice.config import Config, load_config
+from omarchy_voice.config import Config, load_config, stt_snapshot
 from omarchy_voice.core import DesktopRegistry, Router, VoiceError, parse
 from omarchy_voice.service import Controller, dispatch
 
@@ -326,6 +326,7 @@ def test_voice_command_recording_never_executes(tmp_path):
             "state": "voice_command_review", "message": "Review the heard phrase; no action was run",
             "voice_command_text": "Open is putty high.",
             "voice_commands_revision": voice_commands_revision(config.voice_commands),
+            "stt": stt_snapshot(config),
         }
         assert not actions and not audio.exists()
         controller.cancel()
@@ -418,3 +419,31 @@ def test_apps_cli_exposes_expected_revision(apps, capsys):
     assert main(["apps"]) == 0
     second = json.loads(capsys.readouterr().out)["voice_commands_revision"]
     assert second != first
+
+
+def test_stt_status_cli_requests_live_snapshot(monkeypatch, capsys):
+    seen = {}
+
+    def fake_request(command, **kwargs):
+        seen["command"] = command
+        return {"state": "idle", "message": "STT status", "stt": stt_snapshot(Config()),
+                "model_available": True}
+
+    monkeypatch.setattr("omarchy_voice.cli.request", fake_request)
+    assert main(["stt-status"]) == 0
+    assert seen["command"] == "stt_status"
+    data = json.loads(capsys.readouterr().out)
+    assert data["model_available"] is True
+
+
+def test_stt_status_reads_back_loaded_daemon_config(monkeypatch):
+    monkeypatch.setattr("omarchy_voice.service.cached_model", lambda config: True)
+    config = Config()
+    controller = Controller(config)
+    try:
+        result = dispatch(controller, {"command": "stt_status"})
+        assert result["stt"] == stt_snapshot(config)
+        assert result["model_available"] is True
+        assert controller.status()["stt"] == stt_snapshot(config)
+    finally:
+        controller.close()

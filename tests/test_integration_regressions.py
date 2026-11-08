@@ -6,7 +6,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from omarchy_voice.config import Config
+from omarchy_voice.config import Config, stt_snapshot
 from omarchy_voice.core import Router, VoiceError, parse
 from omarchy_voice.service import Server, request
 from omarchy_voice.voice_commands import voice_commands_revision
@@ -155,6 +155,7 @@ def test_async_action_failure_visible_and_recoverable(tmp_path):
     assert c.status() == {
         "state": "error", "message": "Desktop action failed",
         "voice_commands_revision": voice_commands_revision(c.config.voice_commands),
+        "stt": stt_snapshot(c.config),
     }
     assert c.cancel()["state"] == "idle"
     c.close()

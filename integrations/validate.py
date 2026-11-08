@@ -6,13 +6,18 @@ This does not install a plugin or start a microphone/desktop action.
 """
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
 
 repo = Path(__file__).resolve().parents[1]
 shell = Path('/usr/share/omarchy/shell')
-subprocess.run(['omarchy', 'plugin', 'validate', str(repo / 'plugin')], check=True)
+with tempfile.TemporaryDirectory(prefix='voice-plugin-', dir=os.environ.get('TMPDIR')) as package:
+    staging = Path(package)
+    shutil.copy2(repo / 'manifest.json', staging / 'manifest.json')
+    shutil.copytree(repo / 'plugin', staging / 'plugin')
+    subprocess.run(['omarchy', 'plugin', 'validate', str(staging)], check=True)
 subprocess.run(['luac', '-p', str(repo / 'integrations/hyprland-bindings.lua')], check=True)
 with tempfile.TemporaryDirectory(prefix='voice-qml-', dir=os.environ.get('TMPDIR')) as temp:
     root = Path(temp)

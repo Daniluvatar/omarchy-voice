@@ -47,12 +47,30 @@ elif args == ['status']:
         response['voice_commands_revision'] = '0000000000000000' if mode == 'mismatch' else revision
     with open(os.environ['VOICE_PANEL_TEST_STATUS_LOG'], 'a') as status_log:
         status_log.write(json.dumps({'response': response, 'code': code, 'mode': state.get('status_mode', 'ok'), 'mapping': sorted(state['voice_commands'].keys())}) + '\\n')
-elif args[0] == 'fixture' and len(args) == 2 and args[1] in ('ok', 'down', 'mismatch'):
-    state['status_mode'] = args[1]
+elif args[0] == 'fixture' and len(args) == 2 and args[1] in (
+        'ok', 'down', 'mismatch', 'stt_ok', 'stt_down', 'stt_mismatch', 'stt_missing'):
+    mode = args[1]
+    if mode in ('ok', 'down', 'mismatch'):
+        state['status_mode'] = mode
+    else:
+        state['stt_mode'] = mode[4:]
     save_state()
-    response = {'state': 'idle', 'message': 'fixture mode set: ' + args[1]}
+    response = {'state': 'idle', 'message': 'fixture mode set: ' + mode}
 elif args == ['settings', 'show']:
-    pass
+    response['stt'] = state['stt']
+    response['stt_options'] = state.get('stt_options', {})
+elif args[:2] == ['settings', 'stt'] and len(args) == 4:
+    state['stt'][args[2]] = args[3]
+    save_state()
+    response['stt'] = state['stt']
+elif args == ['stt-status']:
+    mode = state.get('stt_mode', 'ok')
+    if mode == 'down':
+        response = {'state': 'error', 'message': 'Simulated service socket failure'}
+        code = 1
+    else:
+        response['stt'] = state['daemon_stt'] if mode == 'mismatch' else state['stt']
+        response['model_available'] = mode != 'missing'
 elif args == ['apps']:
     response['voice_commands_revision'] = revision
     response['apps'] = [
@@ -127,27 +145,14 @@ ShellRoot {
     function setFixture(mode) {
         fixtureState = "sent:" + mode
         fixtureDone = false
-        if (mode === "down") fixtureDownJob.running = true
-        else if (mode === "mismatch") fixtureMismatchJob.running = true
-        else fixtureOkJob.running = true
+        fixtureJob.command = ["omarchy-voice", "fixture", mode]
+        fixtureJob.running = true
     }
     Process {
-        id: fixtureOkJob
+        id: fixtureJob
         command: ["omarchy-voice", "fixture", "ok"]
         stdout: StdioCollector {}
-        onExited: function(code) { if (fixtureState === "sent:ok") fixtureDone = true }
-    }
-    Process {
-        id: fixtureDownJob
-        command: ["omarchy-voice", "fixture", "down"]
-        stdout: StdioCollector {}
-        onExited: function(code) { if (fixtureState === "sent:down") fixtureDone = true }
-    }
-    Process {
-        id: fixtureMismatchJob
-        command: ["omarchy-voice", "fixture", "mismatch"]
-        stdout: StdioCollector {}
-        onExited: function(code) { if (fixtureState === "sent:mismatch") fixtureDone = true }
+        onExited: function(code) { if (fixtureState === "sent:" + fixtureJob.command[2]) fixtureDone = true }
     }
     Component.onCompleted: {
         var component = Qt.createComponent("Plugin/VoicePanel.qml")
@@ -272,7 +277,69 @@ ShellRoot {
                        panel.commandStatus === "Voice service is ready but is not running the saved voice commands") {
                 if (panel.applyChecking) { fail("revision mismatch left the panel busy"); return }
                 if (!panel.commandsPendingApply) { fail("revision mismatch cleared pending changes"); return }
-                console.log("PASS panel refresh: queued save/list, switch, update, remove, failed write, Desktop, reopen, update editor, and bounded Apply readiness (success/restart failure/probe timeout/revision mismatch)")
+                setFixture("ok")
+                panel.applyStt("model", "base.en")
+                panel.sttStatus = ""
+                phase = 10; sub = 0
+            } else if (phase === 10 && sub === 0 && panel.stt.model === "base.en") {
+                setFixture("stt_ok")
+                sub = 1
+            } else if (phase === 10 && sub === 1 && fixtureDone) {
+                panel.sttStatus = ""
+                panel.applySttChanges()
+                sub = 2
+            } else if (phase === 10 && sub === 2 &&
+                       panel.sttStatus === "Applied: the running voice service reports the saved STT settings") {
+                if (panel.sttApplyChecking) { fail("successful STT apply left the panel checking"); return }
+                phase = 11; sub = 0
+            } else if (phase === 11 && sub === 0) {
+                panel.sttStatus = ""
+                panel.applySttChanges()
+                sub = 1
+            } else if (phase === 11 && sub === 1 && panel.sttStatus === "Could not restart voice service") {
+                if (panel.sttApplyChecking) { fail("failed STT restart left the panel checking"); return }
+                phase = 12; sub = 0
+            } else if (phase === 12 && sub === 0) {
+                setFixture("stt_mismatch")
+                sub = 1
+            } else if (phase === 12 && sub === 1 && fixtureDone) {
+                panel.sttStatus = ""
+                panel.applySttChanges()
+                sub = 2
+            } else if (phase === 12 && sub === 2 &&
+                       panel.sttStatus === "Voice service is ready but is not running the saved STT settings") {
+                if (panel.sttApplyChecking) { fail("STT mismatch left the panel checking"); return }
+                phase = 13; sub = 0
+            } else if (phase === 13 && sub === 0) {
+                setFixture("stt_down")
+                sub = 1
+            } else if (phase === 13 && sub === 1 && fixtureDone) {
+                panel.sttStatus = ""
+                panel.applySttChanges()
+                sub = 2
+            } else if (phase === 13 && sub === 2 &&
+                       panel.sttStatus === "Voice service restarted but did not become ready within the allowed time; the STT change is not verified") {
+                if (panel.sttApplyChecking) { fail("STT probe timeout left the panel checking"); return }
+                phase = 14; sub = 0
+            } else if (phase === 14 && sub === 0) {
+                setFixture("stt_missing")
+                sub = 1
+            } else if (phase === 14 && sub === 1 && fixtureDone) {
+                panel.sttStatus = ""
+                panel.applySttChanges()
+                sub = 2
+            } else if (phase === 14 && sub === 2 &&
+                       panel.sttStatus === "Applied: the running voice service reports the saved STT settings, but the configured model is not cached; run omarchy-voice download-model") {
+                if (panel.sttApplyChecking) { fail("missing model left the panel checking"); return }
+                setFixture("stt_ok")
+                phase = 15; sub = 0
+            } else if (phase === 15 && sub === 0 && fixtureDone) {
+                panel.sttStatus = ""
+                panel.applySttChanges()
+                sub = 1
+            } else if (phase === 15 && sub === 1 &&
+                       panel.sttStatus === "Applied: the running voice service reports the saved STT settings") {
+                console.log("PASS panel refresh: queued save/list, switch, update, remove, failed write, Desktop, reopen, update editor, bounded Apply readiness (success/restart failure/probe timeout/revision mismatch), and STT readback (success/restart failure/mismatch/probe timeout/missing model/recovery)")
                 panel.close()
                 panel.destroy()
                 Qt.quit()
@@ -291,9 +358,16 @@ def main():
         (root / 'Plugin').symlink_to(REPO / 'plugin', target_is_directory=True)
         (root / 'shell.qml').write_text(HARNESS)
         state = root / 'state.json'
-        state.write_text(json.dumps({"voice_commands": {"first phrase": "alpha.desktop", "other phrase": "beta.desktop"},
-                                        "restart_codes": [0, 1, 0, 0],
-                                        "status_mode": "ok"}))
+        state.write_text(json.dumps({
+            "voice_commands": {"first phrase": "alpha.desktop", "other phrase": "beta.desktop"},
+            "restart_codes": [0, 1, 0, 0, 0, 1, 0, 0, 0, 0],
+            "status_mode": "ok",
+            "stt_mode": "ok",
+            "stt": {"provider": "faster-whisper", "model": "tiny.en", "device": "cpu",
+                    "language": "en", "compute_type": "int8"},
+            "daemon_stt": {"provider": "faster-whisper", "model": "tiny.en", "device": "cpu",
+                           "language": "en", "compute_type": "int8"},
+        }))
         calls = root / 'calls.jsonl'
         calls.touch()
         status_log = root / 'status_log.jsonl'
@@ -323,13 +397,16 @@ def main():
             raise SystemExit(f'Panel did not refresh on every mutation and reopen: {requests}')
         restarts = [r for r in requests if r == ['--user', 'restart', 'omarchy-voice.service']]
         statuses = [r for r in requests if r == ['status']]
+        stt_probes = [r for r in requests if r == ['stt-status']]
         sets = [r for r in requests if r[:2] == ['voice-command', 'set']]
-        # Four Applies: one restart each. The status endpoint also serves the panel's
-        # continuous service monitor, so no exact status count is asserted; bounded probe
-        # retries are verified from the panel's applyProbe attempt log.
-        if len(restarts) != 4 or len(sets) != 6:
+        # Four command Apply restarts plus five STT Apply restarts. The status
+        # endpoint also serves the panel's continuous service monitor, so no
+        # exact status count is asserted; bounded probe retries are verified
+        # from the panel's probe attempt counters.
+        if len(restarts) != 10 or len(sets) != 6 or len(stt_probes) < 3:
             raise SystemExit(
-                f'Apply flow issued the wrong calls (restarts={restarts!r}, status={statuses!r}, sets={sets!r})'
+                f'Apply flow issued the wrong calls (restarts={restarts!r}, status={statuses!r}, '
+                f'stt_probes={stt_probes!r}, sets={sets!r})'
             )
         unexpected = [r for r in requests if r[:1] == ['voice-command'] and r[1] == 'remove' and len(r) > 2
                       and r[2] not in ('renamed phrase',)]

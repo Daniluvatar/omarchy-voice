@@ -50,6 +50,24 @@ class FasterWhisper:
         return text
 
 
+def cached_model(config):
+    """Presence-only check of the local model cache.
+
+    This never downloads and never loads the model. ``local_files_only=True``
+    raises when the configured model is not already cached; that is the honest
+    distinction between "downloadable" and "ready for offline transcription".
+    """
+    if not FasterWhisper(config).available():
+        return False
+    from faster_whisper.utils import download_model as download
+
+    try:
+        download(config.model, local_files_only=True)
+    except Exception:
+        return False
+    return True
+
+
 def download_model(config):
     if not FasterWhisper(config).available():
         raise VoiceError("Install the stt extra first")

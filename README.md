@@ -24,7 +24,7 @@ The panel has two catalogs:
 - **Applications.** Installed apps. An app is **Configured** when at least one voice command can currently route to it: a built-in phrase from the app catalog, or a saved phrase. Configured apps are listed first, alphabetically, then the remaining apps, alphabetically. Click an app to see its commands or add a phrase. **Open application** is the only app action, and the panel does not launch it.
 - **Desktop.** Window, workspace, and system phrases the router actually plans. These are not Super+K chords.
 
-Saving a phrase does not activate it. Click **Apply saved phrases**. That restarts the user service and checks that the running daemon reports the saved configuration. Speech settings work the same way: **Apply STT** restarts the service. Until then, the panel is showing saved configuration, not what the daemon has loaded.
+Saving a phrase does not activate it. Click **Apply saved phrases**. That restarts the user service and checks that the running daemon reports the saved configuration. Speech settings work the same way: **Apply STT** restarts the service, then reads back the daemon’s loaded provider, model, device, and language plus its model-cache state. It reports restart failure, timeout, a settings mismatch, or a missing cached model instead of claiming transcription is ready. Until then, the panel is showing saved configuration, not what the daemon has loaded.
 
 After a successful spoken action that has a Super+K chord, the Omarchy OSD can show that chord only. **Show keybinding** in Settings turns the overlay off. Actions without a chord, and relative workspace moves, show nothing.
 
@@ -62,31 +62,29 @@ omarchy-voice doctor
 omarchy-voice download-model
 ```
 
-`~/.local/bin` must be on `PATH`. The repository is private. `download-model` needs network once. After that, transcription uses the local Hugging Face cache and does not send audio off the machine. The default model is `tiny.en`.
+`~/.local/bin` must be on `PATH`. The repository is public; clone it over HTTPS from the URL above. `download-model` needs network once. After that, transcription uses the local Hugging Face cache and does not send audio off the machine. The default model is `tiny.en`.
 
 The `stt` extra pins PyAV below 19. faster-whisper 1.x still passes `metadata_errors` to `av.open()`, which PyAV 19 removed. If a tool environment was created before that pin, reinstall with `uv tool install --force --python 3.12 --from '.[stt]' omarchy-voice` and restart the service.
 
-`doctor` checks that the required programs and the STT package are present. It does not prove the model can transcribe.
+`doctor` checks the required programs (`pw-record`, `hyprctl`, `wpctl`, `gio`, `omarchy`, `systemd-run`), the STT and PyAV packages, the runtime directory, a bounded `systemd-run --user --scope` probe, and whether the configured model is already in the local cache. The scope probe runs only `true`; it does not execute a desktop action. A passing result does not prove transcription works — use a local WAV with `omarchy-voice transcribe` for that.
 
 ## Install the widget
 
-The widget is the `plugin/` directory, id `local.omarchy-voice`. Do not run `omarchy plugin add` on this repository: that command expects a manifest at the repository root. Do not edit `/usr/share/omarchy`. A manual copy is not updated by `omarchy plugin update`.
+The repository root is the Omarchy plugin package, id `local.omarchy-voice`; its manifest entry point is `plugin/VoicePanel.qml`. Install it from the public git URL, not by copying `plugin/` yourself: `omarchy plugin add` validates the cloned tree, records `clonedFrom`, and makes `omarchy plugin update` work. The installer also validates a clean checkout with `omarchy plugin validate .`; do not run that root validation after creating the development `.venv`, because `.venv` contains symlinks that are not part of an installation.
 
 From the repository root, after the backend is on `PATH`:
 
 ```sh
-omarchy plugin validate ./plugin
-test ! -e "$HOME/.config/omarchy/plugins/local.omarchy-voice" && \
-  cp -R ./plugin "$HOME/.config/omarchy/plugins/local.omarchy-voice"
-install -Dm755 integrations/omarchy-voice-edit-config "$HOME/.local/bin/omarchy-voice-edit-config"
-install -Dm644 integrations/omarchy-voice.service "$HOME/.config/systemd/user/omarchy-voice.service"
+omarchy plugin add https://github.com/Daniluvatar/omarchy-voice.git --enable
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/local.omarchy-voice"
+install -Dm755 "$PLUGIN_DIR/integrations/omarchy-voice-edit-config" "$HOME/.local/bin/omarchy-voice-edit-config"
+install -Dm644 "$PLUGIN_DIR/integrations/omarchy-voice.service" "$HOME/.config/systemd/user/omarchy-voice.service"
 systemctl --user daemon-reload
 systemctl --user enable --now omarchy-voice.service
-omarchy plugin enable local.omarchy-voice
 omarchy bar put local.omarchy-voice --section right --index 0
 ```
 
-If that plugin directory already exists, use [Update and uninstall](#update-and-uninstall). Do not merge an old copy with a new one. If the bar does not pick up a replaced widget, run `omarchy restart shell`.
+The plugin scripts use `$HOME/.config/omarchy/plugins`. If that plugin is already installed, use [Update and uninstall](#update-and-uninstall) instead of adding it again. If the bar does not pick up a replaced widget, run `omarchy restart shell`.
 
 Do not run `omarchy-voice serve` while the user service is active. The unit expects `~/.local/bin/omarchy-voice`. If desktop actions cannot see the session, check `systemctl --user show-environment` for `WAYLAND_DISPLAY` and `HYPRLAND_INSTANCE_SIGNATURE`. Do not hard-code another session’s values.
 
@@ -94,14 +92,23 @@ The widget polls only while the bar loads it. Hiding the widget does not stop a 
 
 ## Shortcut
 
-F5 is opt-in. Review `integrations/hyprland-bindings.lua`, then copy the `hl.unbind` and the two `o.bind` lines into `~/.config/hypr/bindings.lua`. Press starts capture. Release stops it. Then:
+F5 is opt-in. Before editing, inspect what F5 does today and back up the file:
+
+```sh
+omarchy menu keybindings --print | grep -i 'F5'
+cp ~/.config/hypr/bindings.lua ~/.config/hypr/bindings.lua.bak-$(date +%Y%m%d)
+```
+
+If F5 is already bound to something you use, choose an unused key instead of replacing it, or accept the replacement deliberately. Review `integrations/hyprland-bindings.lua`, then copy the `hl.unbind` and the two `o.bind` lines into `~/.config/hypr/bindings.lua`. Press starts capture. Release stops it. Then:
 
 ```sh
 hyprctl reload
 hyprctl configerrors
 ```
 
-The widget’s shortcut dropdown changes the label only. It does not rewrite Hyprland. Leave F9, Super+V, Super+Ctrl+V, and Super+S alone. Do not hold F5 and F9 together. If a release is missed, capture stops at the configured limit; use Cancel.
+The snippet deliberately unbinds F5. To restore the original binding, remove the snippet, re-add the F5 line(s) from the backup, reload, and check `hyprctl configerrors`. If F5 had no prior binding, removing the snippet returns it to the stock state.
+
+The widget’s shortcut dropdown changes the label only. To use a different chord, add a reviewed press/release pair for that chord with the same two commands; do not assume the dropdown installs it. Replacing Super+V, Super+Ctrl+V, Super+S, or F9 changes existing Omarchy or Voxtype shortcuts. Do not hold F5 and F9 together. If a release is missed, capture stops at the configured limit; use Cancel.
 
 ## Configuration
 
@@ -164,7 +171,12 @@ omarchy-voice run 'workspace two' --execute
 
 `alias` and `start-alias` are compatibility names for `voice-command` and `start-voice-command`. File transcription accepts a bounded PCM WAV. Recognized speech that is not a supported command returns an error and runs nothing.
 
-Diagnostic lines, including the transcript, are appended to `~/.local/state/omarchy-voice/voice.log`. Panel errors stay short and do not include paths or Python tracebacks. Use `omarchy-voice logs` for the recorded exception.
+Diagnostic lines, including the transcript, are appended to `~/.local/state/omarchy-voice/voice.log`. This log is local-only and is never uploaded. The state directory is created with mode `0700` and the log with `0600`; an existing owned log is restricted to `0600` on the next write or `omarchy-voice logs` call, so manual `serve` does not rely on the user unit's `UMask`. When the log exceeds 256 KiB it is rotated to its last 400 lines. Panel errors stay short and do not include paths or Python tracebacks. Use `omarchy-voice logs` for the recorded exception. To restrict a log created by an older version explicitly:
+
+```sh
+chmod 700 ~/.local/state/omarchy-voice
+chmod 600 ~/.local/state/omarchy-voice/voice.log
+```
 
 ## Implementation
 
@@ -178,24 +190,38 @@ Diagnostic lines, including the transcript, are appended to `~/.local/state/omar
 
 ## Update and uninstall
 
-Backend:
+Backend, from the backend checkout:
 
 ```sh
+git pull --ff-only
 uv tool install --force --python 3.12 --from '.[stt]' omarchy-voice
 systemctl --user restart omarchy-voice.service
 ```
 
-Widget: `omarchy-voice cancel`, then `omarchy plugin disable local.omarchy-voice`. Replace only `~/.config/omarchy/plugins/local.omarchy-voice` with a new copy of `plugin/`. Validate, enable, and `omarchy bar put` again. Reinstall the helper and unit if those files changed, then `systemctl --user daemon-reload` and restart the service. Run `omarchy restart shell` if the bar keeps the previous widget.
+Widget:
+
+```sh
+omarchy-voice cancel
+omarchy plugin update local.omarchy-voice
+PLUGIN_DIR="$HOME/.config/omarchy/plugins/local.omarchy-voice"
+install -Dm755 "$PLUGIN_DIR/integrations/omarchy-voice-edit-config" "$HOME/.local/bin/omarchy-voice-edit-config"
+install -Dm644 "$PLUGIN_DIR/integrations/omarchy-voice.service" "$HOME/.config/systemd/user/omarchy-voice.service"
+systemctl --user daemon-reload
+systemctl --user restart omarchy-voice.service
+omarchy plugin enable local.omarchy-voice
+omarchy bar put local.omarchy-voice --section right --index 0
+```
+
+`omarchy plugin update` fetches the recorded `clonedFrom` URL and validates the new tree before fast-forwarding. Run `omarchy restart shell` if the bar keeps the previous widget. Reinstall the helper and unit from the installed plugin directory, not from a stale checkout.
 
 Uninstall:
 
 1. `omarchy-voice cancel`
 2. `systemctl --user disable --now omarchy-voice.service`
-3. `omarchy plugin disable local.omarchy-voice`
-4. Remove `~/.config/omarchy/plugins/local.omarchy-voice` after checking the path
-5. Remove `~/.config/systemd/user/omarchy-voice.service` and `~/.local/bin/omarchy-voice-edit-config`, then `systemctl --user daemon-reload`
-6. Remove the F5 lines from `~/.config/hypr/bindings.lua`, then `hyprctl reload` and `hyprctl configerrors`
-7. `uv tool uninstall omarchy-voice` if the tool should go too
+3. `omarchy plugin remove local.omarchy-voice` (this removes the git checkout and unloads it; do not `rm` the directory by hand)
+4. Remove `~/.config/systemd/user/omarchy-voice.service` and `~/.local/bin/omarchy-voice-edit-config`, then `systemctl --user daemon-reload`
+5. Remove the F5 unbind and press/release binds from `~/.config/hypr/bindings.lua`, then `hyprctl reload` and `hyprctl configerrors`. If F5 had an earlier binding, restore it from the backup rather than leaving F5 unbound.
+6. `uv tool uninstall omarchy-voice` if the tool should go too
 
 Do not delete `config.toml`, `voice_commands.json`, or the model cache unless that is intentional. Do not change F9, Voxtype, or anything under `/usr/share/omarchy`.
 
@@ -203,7 +229,7 @@ Do not delete `config.toml`, `voice_commands.json`, or the model cache unless th
 
 ```sh
 uv sync --python 3.12 --extra test --extra stt
-uv run --extra test --extra stt pytest -q
+uv run --extra test --extra stt python -m pytest -q
 python3 integrations/validate.py
 ```
 

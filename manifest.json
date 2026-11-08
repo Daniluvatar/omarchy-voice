@@ -7,7 +7,7 @@
   "author": "Omarchy Voice contributors",
   "license": "MIT",
   "kinds": ["bar-widget"],
-  "entryPoints": {"barWidget": "VoicePanel.qml"},
+  "entryPoints": {"barWidget": "plugin/VoicePanel.qml"},
   "barWidget": {
     "displayName": "Voice",
     "description": "Local voice control (requires the separately started omarchy-voice service).",

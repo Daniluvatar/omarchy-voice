@@ -2,10 +2,12 @@
 
 import argparse
 from dataclasses import asdict
+import importlib.util
 import json
 from pathlib import Path
 import shutil
 import signal
+import subprocess
 import sys
 import threading
 import wave
@@ -13,7 +15,7 @@ from .voice_commands import read_settings, read_voice_commands, remove_voice_com
 from .config import load_config, set_stt, stt_options, stt_snapshot
 from .core import BUILTIN_APP_NAMES, DesktopRegistry, ROLE_LAUNCH, VoiceError, Router, default_browser_desktop_id, parse
 from .log import log_path
-from .providers import FasterWhisper, IsolatedSTT, download_model
+from .providers import FasterWhisper, IsolatedSTT, cached_model, download_model
 from .service import Controller, Server, request, runtime_dir
 
 
@@ -29,6 +31,7 @@ def parser():
         "stop",
         "cancel",
         "status",
+        "stt-status",
         "providers",
         "apps",
         "doctor",
@@ -135,6 +138,68 @@ def transcribe_file(path, config):
         worker.cancel()
 
 
+def user_scope_ready():
+    """Probe the user systemd scope the router uses for desktop actions.
+
+    The probe runs only ``true`` and is safe to repeat. A green doctor result
+    must not imply desktop actions were executed.
+    """
+    if shutil.which("systemd-run") is None:
+        return False
+    try:
+        completed = subprocess.run(
+            ["systemd-run", "--user", "--scope", "--quiet", "--collect", "--", "true"],
+            check=False,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            timeout=5,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return completed.returncode == 0
+
+
+def doctor_report(config):
+    required_programs = ("pw-record", "hyprctl", "wpctl", "gio", "omarchy", "systemd-run")
+    optional_programs = ("xdg-settings", "xdg-mime")
+    checks = {name: shutil.which(name) is not None for name in required_programs + optional_programs}
+    checks["stt_dependency"] = FasterWhisper(config).available()
+    checks["av_dependency"] = importlib.util.find_spec("av") is not None
+    checks["model_available"] = cached_model(config)
+    try:
+        runtime_dir()
+        checks["runtime_directory"] = True
+    except VoiceError:
+        checks["runtime_directory"] = False
+    checks["user_scope_ready"] = user_scope_ready()
+
+    missing = [name for name in required_programs if not checks[name]]
+    missing += [
+        name
+        for name in ("stt_dependency", "av_dependency", "runtime_directory", "user_scope_ready")
+        if not checks[name]
+    ]
+    warnings = []
+    if not checks["model_available"]:
+        warnings.append("Configured model is not in the local cache; run omarchy-voice download-model")
+    for name in optional_programs:
+        if not checks[name]:
+            warnings.append(f"Optional browser-integration program missing: {name}")
+
+    if missing:
+        message = "Missing runtime prerequisites: " + ", ".join(missing)
+    else:
+        message = "Runtime prerequisites present; model presence is a cache check, not a transcription test"
+    return {
+        "state": "error" if missing else "idle",
+        "message": message,
+        "checks": checks,
+        "missing": missing,
+        "warnings": warnings,
+    }
+
+
 def main(argv=None):
     args = parser().parse_args(argv)
     try:
@@ -150,7 +215,7 @@ def main(argv=None):
             signal.signal(signal.SIGINT, shutdown)
             server.serve()
             return 0
-        if command in ("start", "start-alias", "start-voice-command", "stop", "cancel", "status"):
+        if command in ("start", "start-alias", "start-voice-command", "stop", "cancel", "status", "stt-status"):
             if command == "start-alias":
                 command = "start-voice-command"
             result = request(command.replace("-", "_"))
@@ -232,21 +297,7 @@ def main(argv=None):
                 "voice_commands_revision": voice_commands_revision(config.voice_commands),
             }
         elif command == "doctor":
-            checks = {
-                name: shutil.which(name) is not None
-                for name in ("pw-record", "hyprctl", "wpctl", "gio", "omarchy")
-            }
-            checks["stt_dependency"] = FasterWhisper(config).available()
-            try:
-                runtime_dir()
-                checks["runtime_directory"] = True
-            except VoiceError:
-                checks["runtime_directory"] = False
-            result = {
-                "state": "idle" if all(checks.values()) else "error",
-                "message": "Dependency checks (model availability is checked during offline transcription)",
-                "checks": checks,
-            }
+            result = doctor_report(config)
         elif command == "download-model":
             location = download_model(config)
             result = {"state": "idle", "message": "Model downloaded", "path": location}

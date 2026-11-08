@@ -86,6 +86,8 @@ Panel {
         }
     })
     property string sttStatus: ""
+    property bool sttApplyChecking: false
+    property int sttProbeAttempts: 0
     property string appSearchText: ""
     property string catalog: "apps"
 
@@ -310,6 +312,12 @@ Panel {
         serviceRestart.running = true
     }
 
+    function applySttChanges() {
+        if (sttRestart.running || sttApplyChecking) return
+        sttStatus = "Restarting voice service…"
+        sttRestart.running = true
+    }
+
     function runApplyProbe() {
         applyProbeAttempts++
         applyProbe.running = true
@@ -335,6 +343,37 @@ Panel {
         }
         root.commandsPendingApply = false
         commandStatus = "Applied: the running voice service is ready and has the saved voice commands"
+    }
+
+    function finishSttProbe(data) {
+        sttApplyChecking = false
+        if (!data) {
+            sttStatus = "Voice service restarted but did not become ready within the allowed time; the STT change is not verified"
+            return
+        }
+        var active = data.stt
+        if (!active || typeof active !== "object") {
+            sttStatus = "Voice service is ready but did not report its STT settings, so activation could not be verified"
+            return
+        }
+        var fields = ["provider", "model", "device", "language", "compute_type"]
+        for (var i = 0; i < fields.length; i++) {
+            var expected = root.stt[fields[i]]
+            if (expected !== undefined && String(active[fields[i]] || "") !== String(expected || "")) {
+                sttStatus = "Voice service is ready but is not running the saved STT settings"
+                return
+            }
+        }
+        if (data.model_available !== true) {
+            sttStatus = "Applied: the running voice service reports the saved STT settings, but the configured model is not cached; run omarchy-voice download-model"
+            return
+        }
+        sttStatus = "Applied: the running voice service reports the saved STT settings"
+    }
+
+    function runSttProbe() {
+        sttProbeAttempts++
+        sttProbe.running = true
     }
 
     function showCommandsTab() {
@@ -583,9 +622,42 @@ Panel {
         id: sttRestart
         command: ["systemctl", "--user", "restart", "omarchy-voice.service"]
         onExited: function(code) {
-            root.sttStatus = code === 0 ? "Voice service restarted; STT settings are active" : "Could not restart voice service"
-            if (code === 0) root.settingsRequest(["show"])
+            if (code !== 0) {
+                root.sttStatus = "Could not restart voice service"
+                root.sttApplyChecking = false
+                return
+            }
+            // Do not claim activation until the restarted daemon reports the
+            // settings it actually loaded and the model cache state.
+            root.refreshCommands()
+            root.settingsRequest(["show"])
+            root.sttApplyChecking = true
+            root.sttProbeAttempts = 0
+            root.runSttProbe()
         }
+    }
+    Process {
+        id: sttProbe
+        command: ["omarchy-voice", "stt-status"]
+        stdout: StdioCollector { id: sttProbeOutput }
+        onExited: function(code) {
+            var data = null
+            try {
+                if (code === 0) data = JSON.parse(sttProbeOutput.text)
+            } catch (e) {}
+            if (data && typeof data === "object" && data !== null && typeof data.state === "string")
+                root.finishSttProbe(data)
+            else if (root.sttProbeAttempts < 4)
+                sttProbeTimer.restart()
+            else
+                root.finishSttProbe(null)
+        }
+    }
+    Timer {
+        id: sttProbeTimer
+        interval: 500
+        repeat: false
+        onTriggered: root.runSttProbe()
     }
     Process {
         id: appQuery
@@ -1193,10 +1265,10 @@ Panel {
                         font.pixelSize: Style.font.caption
                     }
                     Button {
-                        text: "Apply STT (restart voice service)"
-                        enabled: !sttRestart.running && !voice.busy &&
+                        text: root.sttApplyChecking ? "Verifying applied STT settings…" : "Apply STT (restart voice service)"
+                        enabled: !sttRestart.running && !root.sttApplyChecking && !voice.busy &&
                                  (voice.voiceState === "idle" || voice.voiceState === "error" || voice.voiceState === "voice_command_review")
-                        onClicked: sttRestart.running = true
+                        onClicked: root.applySttChanges()
                     }
                     Text {
                         width: parent.width
